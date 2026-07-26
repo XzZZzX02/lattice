@@ -210,3 +210,34 @@ pub struct DocumentChunk {
     pub start_offset: i64,
     pub end_offset: i64,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RetrievedDocumentChunk {
+    pub chunk_id: String,
+    pub document_id: String,
+    pub document_name: String,
+    pub content: String,
+    pub page_number: Option<i64>,
+    pub heading_path: String,
+    pub start_offset: i64,
+    pub end_offset: i64,
+    pub score: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentCitation {
+    pub id: String,
+    pub turn_id: String,
+    pub chunk_id: Option<String>,
+    pub document_id: String,
+    pub document_name: String,
+    pub page_number: Option<i64>,
+    pub heading_path: String,
+    pub excerpt: String,
+    pub start_offset: i64,
+    pub end_offset: i64,
+    pub created_at: String,
+    pub available: bool,
+}

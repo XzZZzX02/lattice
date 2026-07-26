@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-  BrainCircuit, Download, FolderPlus, GitBranch, Library, Network, Plus,
-  Search, Settings2, Square, Star, Trash2, Upload, Workflow
+  BrainCircuit, Download, FileText, FolderPlus, GitBranch, Library, Network,
+  Plus, Search, Settings2, Square, Star, Trash2, Upload, Workflow, X
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -18,7 +18,7 @@ export function App() {
     createCard, selectCard, renameCard, addQuote, removeQuote, editTurn,
     deleteTurn, regenerateTurn, search, searchResults, favoriteTurnIds,
     toggleFavorite, exportProject, importProject, documents, importDocument,
-    deleteDocument
+    deleteDocument, documentCitations
   } = useWorkspaceStore();
   const [isCreating, setIsCreating] = useState(false);
   const [title, setTitle] = useState("");
@@ -31,6 +31,9 @@ export function App() {
     endOffset: number;
   } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeCitation, setActiveCitation] = useState(
+    null as (typeof documentCitations)[number] | null
+  );
 
   useEffect(() => {
     void loadProjects();
@@ -229,6 +232,23 @@ export function App() {
                         </button>
                       )}
                     </div>
+                    {documentCitations.some((citation) => citation.turnId === turn.id) && (
+                      <div className="citation-list" aria-label="Document citations">
+                        {documentCitations
+                          .filter((citation) => citation.turnId === turn.id)
+                          .map((citation, index) => (
+                            <button
+                              className={citation.available ? "" : "unavailable"}
+                              key={citation.id}
+                              onClick={() => setActiveCitation(citation)}
+                            >
+                              <FileText size={11} />
+                              [{index + 1}] {citation.documentName}
+                              {citation.pageNumber ? ` · p.${citation.pageNumber}` : ""}
+                            </button>
+                          ))}
+                      </div>
+                    )}
                   </div>
                 ))}
                 {selection && (
@@ -308,6 +328,34 @@ export function App() {
         setSettingsOpen(open);
         if (!open) void loadModels();
       }} />
+      {activeCitation && (
+        <aside className="source-preview" aria-label="Document source">
+          <header>
+            <div>
+              <strong>{activeCitation.documentName}</strong>
+              <span>
+                {activeCitation.pageNumber ? `Page ${activeCitation.pageNumber}` : "Text document"}
+                {citationHeading(activeCitation.headingPath)}
+              </span>
+            </div>
+            <button aria-label="Close source" onClick={() => setActiveCitation(null)}><X size={15} /></button>
+          </header>
+          {!activeCitation.available && <p className="source-unavailable">The source document was deleted. This is the citation snapshot saved with the answer.</p>}
+          <blockquote>{activeCitation.excerpt}</blockquote>
+          <small>Source range {activeCitation.startOffset}–{activeCitation.endOffset}</small>
+        </aside>
+      )}
     </main>
   );
+}
+
+function citationHeading(value: string): string {
+  try {
+    const path = JSON.parse(value) as unknown;
+    return Array.isArray(path) && path.length > 0
+      ? ` · ${path.filter((item): item is string => typeof item === "string").join(" › ")}`
+      : "";
+  } catch {
+    return "";
+  }
 }

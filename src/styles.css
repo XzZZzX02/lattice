@@ -61,6 +61,16 @@ button { color: inherit; }
 .turn-menu button { border: 0; background: transparent; color: #727c75; font-size: 10px; }
 .turn-menu button.favorited { color: #f1c966; }
 .turn-error { color: #ff9999; font-size: 12px; }
+.citation-list { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+.citation-list button { display: flex; align-items: center; gap: 4px; border: 1px solid #34463a; border-radius: 999px; background: #172019; color: #9bcbaa; padding: 5px 8px; font-size: 10px; }
+.citation-list button.unavailable { border-style: dashed; color: #8b8580; }
+.source-preview { position: fixed; z-index: 18; right: 24px; bottom: 24px; width: min(440px, calc(100vw - 48px)); max-height: 55vh; overflow: auto; border: 1px solid #3c4840; border-radius: 16px; background: #151a17; padding: 18px; box-shadow: 0 24px 70px #000; }
+.source-preview header { display: flex; justify-content: space-between; gap: 12px; }
+.source-preview header div { display: grid; gap: 4px; }
+.source-preview header span, .source-preview small { color: #778079; font-size: 10px; }
+.source-preview header button { border: 0; background: transparent; color: #89928c; }
+.source-preview blockquote { margin: 16px 0; padding: 12px; border-left: 2px solid #67e88c; background: #101411; color: #bfc8c2; white-space: pre-wrap; font-size: 12px; line-height: 1.55; }
+.source-unavailable { color: #d2a46f; font-size: 11px; }
 .retry-button { border: 1px solid #465048; border-radius: 8px; background: #252b27; padding: 7px 10px; color: #c9d2cc; }
 .card-actions { display: flex; justify-content: center; gap: 8px; position: sticky; bottom: -32px; margin: 30px -32px -32px; padding: 12px; background: rgba(21,25,22,.94); border-top: 1px solid #303632; }
 .card-actions button { display: flex; align-items: center; gap: 6px; border: 1px solid #3b443e; background: #242a26; border-radius: 9px; padding: 8px 10px; }

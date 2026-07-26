@@ -20,6 +20,7 @@ vi.mock("../lib/ipc", () => ({
   fileApi: { exportProject: vi.fn(), importProject: vi.fn() },
   documentApi: {
     list: vi.fn().mockResolvedValue([]),
+    citations: vi.fn().mockResolvedValue([]),
     import: vi.fn(),
     delete: vi.fn()
   },
@@ -78,6 +79,7 @@ describe("workspace store", () => {
       ,favoriteTurnIds: [],
       searchResults: []
       ,documents: []
+      ,documentCitations: []
     });
   });
 

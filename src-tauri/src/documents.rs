@@ -47,11 +47,14 @@ impl DocumentStore {
         let validated = tauri::async_runtime::spawn_blocking(move || validate_source(&source))
             .await
             .map_err(|_| "Document import was interrupted".to_owned())??;
-        if let Some(document) = database
+        if let Some(mut document) = database
             .find_document_by_hash(project_id, &validated.content_hash)
             .await
             .map_err(|_| "Unable to inspect existing documents".to_owned())?
         {
+            if document.status != "ready" {
+                document = process_document(database, &document).await?;
+            }
             return Ok(DocumentImportResult {
                 document,
                 duplicate: true,
@@ -381,6 +384,24 @@ mod tests {
         assert_eq!(chunks[0].content, "Local knowledge.");
         assert_eq!(chunks[0].start_offset, 11);
         assert_eq!(chunks[0].end_offset, 27);
+        let retrieved = database
+            .retrieve_document_chunks(&workspace.project.id, "Local knowledge", 5)
+            .await
+            .expect("retrieve");
+        assert_eq!(retrieved.len(), 1);
+        let turn = database
+            .create_streaming_turn(
+                &workspace.cards[0].id,
+                "What is local?",
+                "model",
+                "citation-request",
+            )
+            .await
+            .expect("turn");
+        database
+            .create_document_citations(&turn.id, &retrieved)
+            .await
+            .expect("citations");
 
         let duplicate = store
             .ingest(&database, &workspace.project.id, &source)
@@ -399,6 +420,18 @@ mod tests {
             .await
             .expect("documents")
             .is_empty());
+        assert!(database
+            .retrieve_document_chunks(&workspace.project.id, "Local knowledge", 5)
+            .await
+            .expect("deleted retrieval")
+            .is_empty());
+        let citations = database
+            .document_citations_for_project(&workspace.project.id)
+            .await
+            .expect("citation snapshots");
+        assert_eq!(citations.len(), 1);
+        assert!(!citations[0].available);
+        assert_eq!(citations[0].excerpt, "Local knowledge.");
     }
 
     #[tokio::test]

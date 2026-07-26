@@ -22,6 +22,7 @@ vi.mock("./lib/ipc", () => ({
   },
   documentApi: {
     list: vi.fn().mockResolvedValue([]),
+    citations: vi.fn().mockResolvedValue([]),
     import: vi.fn(),
     delete: vi.fn()
   },
@@ -38,7 +39,9 @@ describe("App", () => {
       projects: [],
       workspace: null,
       loading: false,
-      error: null
+      error: null,
+      documents: [],
+      documentCitations: []
     });
   });
 

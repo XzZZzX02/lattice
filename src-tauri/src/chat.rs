@@ -89,6 +89,30 @@ pub async fn run_chat(
     registry.insert(request_id.clone(), token.clone()).await;
     let result = stream_response(database, &profile, &turn, &request_id, &token, &on_event).await;
     registry.remove(&request_id).await;
+    if let Err(message) = &result {
+        if let Ok(current) = database.get_turn(&turn.id).await {
+            if current.status == "streaming" {
+                if let Ok(failed) = database
+                    .update_turn(
+                        &turn.id,
+                        &current.assistant_content,
+                        "failed",
+                        Some(message),
+                    )
+                    .await
+                {
+                    send_event(
+                        &on_event,
+                        StreamEvent::Failed {
+                            request_id,
+                            turn: failed,
+                            message: message.clone(),
+                        },
+                    );
+                }
+            }
+        }
+    }
     result
 }
 
@@ -100,7 +124,26 @@ async fn stream_response(
     token: &CancellationToken,
     on_event: &Channel<StreamEvent>,
 ) -> Result<Turn, String> {
-    let built_context = crate::context::build_context(database, &turn.card_id).await?;
+    let mut built_context = crate::context::build_context(database, &turn.card_id).await?;
+    let card = database
+        .get_card(&turn.card_id)
+        .await
+        .map_err(|_| "Unable to resolve document project".to_owned())?;
+    let retrieved = crate::retrieval::retrieve(
+        database,
+        &card.project_id,
+        &turn.user_content,
+        5,
+        crate::retrieval::RetrievalBackend::FullText,
+    )
+    .await?;
+    if let Some(block) = crate::retrieval::context_block(&retrieved) {
+        built_context.insert_system_before_last_user(block);
+    }
+    database
+        .create_document_citations(&turn.id, &retrieved)
+        .await
+        .map_err(|_| "Unable to save document citations".to_owned())?;
     database
         .set_context_snapshot(&turn.card_id, &built_context.snapshot_hash)
         .await

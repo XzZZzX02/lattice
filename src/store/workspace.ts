@@ -5,8 +5,8 @@ import {
 } from "../lib/ipc";
 import type { ExportFormat } from "../lib/ipc";
 import type {
-  CreateCardInput, CreateQuoteInput, LocalDocument, ModelProfile, Project,
-  ProjectWorkspace, Quote, SearchResult, StreamEvent, Turn
+  CreateCardInput, CreateQuoteInput, DocumentCitation, LocalDocument,
+  ModelProfile, Project, ProjectWorkspace, Quote, SearchResult, StreamEvent, Turn
 } from "../types";
 
 interface WorkspaceState {
@@ -22,6 +22,7 @@ interface WorkspaceState {
   favoriteTurnIds: string[];
   searchResults: SearchResult[];
   documents: LocalDocument[];
+  documentCitations: DocumentCitation[];
   loadProjects: () => Promise<void>;
   createProject: (title: string) => Promise<void>;
   selectProject: (projectId: string) => Promise<void>;
@@ -62,6 +63,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   favoriteTurnIds: [],
   searchResults: [],
   documents: [],
+  documentCitations: [],
   loadProjects: async () => {
     set({ loading: true, error: null });
     try {
@@ -82,6 +84,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         workspace,
         activeCardId: workspace.project.rootCardId,
         documents: [],
+        documentCitations: [],
         projects: [workspace.project, ...state.projects],
         loading: false
       }));
@@ -95,10 +98,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const workspace = await workspaceApi.getWorkspace(projectId);
       const favoriteTurnIds = await knowledgeApi.favoriteTurnIds(projectId);
       const documents = await documentApi.list(projectId);
+      const documentCitations = await documentApi.citations(projectId);
       set({
         workspace,
         favoriteTurnIds,
         documents,
+        documentCitations,
         activeCardId: workspace.project.rootCardId,
         loading: false
       });
@@ -151,6 +156,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         },
         handleEvent
       );
+      const projectId = get().workspace?.project.id;
+      if (projectId) {
+        const documentCitations = await documentApi.citations(projectId);
+        set({ documentCitations });
+      }
       set({ pendingQuotes: [] });
     } catch (error) {
       set({ activeRequestId: null, error: errorMessage(error) });
@@ -280,10 +290,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         workspace.project.id
       );
       const documents = await documentApi.list(workspace.project.id);
+      const documentCitations = await documentApi.citations(workspace.project.id);
       set((state) => ({
         workspace,
         favoriteTurnIds,
         documents,
+        documentCitations,
         activeCardId: workspace.project.rootCardId,
         projects: [
           workspace.project,
@@ -321,10 +333,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (!projectId) return;
     try {
       await documentApi.delete(projectId, documentId);
+      const documentCitations = await documentApi.citations(projectId);
       set((state) => ({
         documents: state.documents.filter(
           (document) => document.id !== documentId
-        )
+        ),
+        documentCitations
       }));
     } catch (error) {
       set({ error: errorMessage(error) });

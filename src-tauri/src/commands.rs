@@ -5,9 +5,9 @@ use crate::{
     db::Database,
     documents::DocumentStore,
     models::{
-        Card, CreateCardInput, CreateQuoteInput, Document, DocumentChunk, DocumentImportResult,
-        ModelProfile, Project, ProjectWorkspace, Quote, RegeneratedTurn, SaveModelProfileInput,
-        SearchResult, SendMessageInput, StreamEvent, Turn,
+        Card, CreateCardInput, CreateQuoteInput, Document, DocumentChunk, DocumentCitation,
+        DocumentImportResult, ModelProfile, Project, ProjectWorkspace, Quote, RegeneratedTurn,
+        SaveModelProfileInput, SearchResult, SendMessageInput, StreamEvent, Turn,
     },
     models_service,
 };
@@ -33,6 +33,17 @@ pub async fn list_document_chunks(
         .list_document_chunks(&project_id, &document_id)
         .await
         .map_err(|_| "Unable to load document chunks".to_owned())
+}
+
+#[tauri::command]
+pub async fn list_document_citations(
+    database: State<'_, Database>,
+    project_id: String,
+) -> Result<Vec<DocumentCitation>, String> {
+    database
+        .document_citations_for_project(&project_id)
+        .await
+        .map_err(|_| "Unable to load document citations".to_owned())
 }
 
 #[tauri::command]

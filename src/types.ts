@@ -157,3 +157,18 @@ export interface DocumentChunk {
   startOffset: number;
   endOffset: number;
 }
+
+export interface DocumentCitation {
+  id: string;
+  turnId: string;
+  chunkId: string | null;
+  documentId: string;
+  documentName: string;
+  pageNumber: number | null;
+  headingPath: string;
+  excerpt: string;
+  startOffset: number;
+  endOffset: number;
+  createdAt: string;
+  available: boolean;
+}

@@ -6,6 +6,7 @@ pub mod db;
 pub mod documents;
 pub mod models;
 pub mod models_service;
+pub mod retrieval;
 
 use tauri::Manager;
 
@@ -43,6 +44,7 @@ pub fn run() {
             commands::favorite_turn_ids,
             commands::list_documents,
             commands::list_document_chunks,
+            commands::list_document_citations,
             commands::import_document,
             commands::delete_document,
             commands::export_project,

@@ -5,6 +5,7 @@ import type {
   CreateCardInput,
   CreateQuoteInput,
   DocumentChunk,
+  DocumentCitation,
   ModelProfile,
   DocumentImportResult,
   LocalDocument,
@@ -115,6 +116,8 @@ export const documentApi = {
     invoke<LocalDocument[]>("list_documents", { projectId }),
   chunks: (projectId: string, documentId: string) =>
     invoke<DocumentChunk[]>("list_document_chunks", { projectId, documentId }),
+  citations: (projectId: string) =>
+    invoke<DocumentCitation[]>("list_document_citations", { projectId }),
   import: async (projectId: string) => {
     const path = await open({
       directory: false,
