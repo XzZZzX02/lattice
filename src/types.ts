@@ -122,3 +122,12 @@ export interface RegeneratedTurn {
   card: Card;
   sourceTurn: Turn;
 }
+
+export interface SearchResult {
+  entityType: "project" | "card" | "turn";
+  entityId: string;
+  projectId: string;
+  cardId: string | null;
+  title: string;
+  excerpt: string;
+}

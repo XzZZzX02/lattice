@@ -15,7 +15,12 @@ vi.mock("./lib/ipc", () => ({
   chatApi: { send: vi.fn(), cancel: vi.fn() },
   cardApi: { create: vi.fn(), rename: vi.fn() },
   quoteApi: { create: vi.fn() },
-  turnApi: { edit: vi.fn(), delete: vi.fn(), regenerate: vi.fn() }
+  turnApi: { edit: vi.fn(), delete: vi.fn(), regenerate: vi.fn() },
+  knowledgeApi: {
+    search: vi.fn().mockResolvedValue([]),
+    toggleFavorite: vi.fn(),
+    favoriteTurnIds: vi.fn().mockResolvedValue([])
+  }
 }));
 
 describe("App", () => {

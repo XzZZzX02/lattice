@@ -1,10 +1,10 @@
 import { create } from "zustand";
 import {
-  cardApi, chatApi, modelApi, quoteApi, turnApi, workspaceApi
+  cardApi, chatApi, knowledgeApi, modelApi, quoteApi, turnApi, workspaceApi
 } from "../lib/ipc";
 import type {
   CreateCardInput, CreateQuoteInput, ModelProfile, Project, ProjectWorkspace,
-  Quote, StreamEvent, Turn
+  Quote, SearchResult, StreamEvent, Turn
 } from "../types";
 
 interface WorkspaceState {
@@ -17,6 +17,8 @@ interface WorkspaceState {
   activeRequestId: string | null;
   activeCardId: string | null;
   pendingQuotes: Quote[];
+  favoriteTurnIds: string[];
+  searchResults: SearchResult[];
   loadProjects: () => Promise<void>;
   createProject: (title: string) => Promise<void>;
   selectProject: (projectId: string) => Promise<void>;
@@ -32,6 +34,8 @@ interface WorkspaceState {
   editTurn: (turnId: string, userContent: string) => Promise<void>;
   deleteTurn: (turnId: string) => Promise<void>;
   regenerateTurn: (turnId: string) => Promise<void>;
+  search: (query: string) => Promise<void>;
+  toggleFavorite: (turnId: string, cardId: string) => Promise<void>;
 }
 
 function errorMessage(error: unknown): string {
@@ -48,6 +52,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   activeRequestId: null,
   activeCardId: null,
   pendingQuotes: [],
+  favoriteTurnIds: [],
+  searchResults: [],
   loadProjects: async () => {
     set({ loading: true, error: null });
     try {
@@ -78,7 +84,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const workspace = await workspaceApi.getWorkspace(projectId);
-      set({ workspace, activeCardId: workspace.project.rootCardId, loading: false });
+      const favoriteTurnIds = await knowledgeApi.favoriteTurnIds(projectId);
+      set({
+        workspace,
+        favoriteTurnIds,
+        activeCardId: workspace.project.rootCardId,
+        loading: false
+      });
     } catch (error) {
       set({ loading: false, error: errorMessage(error) });
     }
@@ -205,6 +217,31 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           : null
       }));
       await get().sendMessage(regenerated.card.id, regenerated.sourceTurn.userContent);
+    } catch (error) {
+      set({ error: errorMessage(error) });
+    }
+  },
+  search: async (query) => {
+    try {
+      const searchResults = await knowledgeApi.search(
+        query,
+        get().workspace?.project.id
+      );
+      set({ searchResults });
+    } catch (error) {
+      set({ error: errorMessage(error) });
+    }
+  },
+  toggleFavorite: async (turnId, cardId) => {
+    const projectId = get().workspace?.project.id;
+    if (!projectId) return;
+    try {
+      const favorited = await knowledgeApi.toggleFavorite(projectId, cardId, turnId);
+      set((state) => ({
+        favoriteTurnIds: favorited
+          ? [...state.favoriteTurnIds, turnId]
+          : state.favoriteTurnIds.filter((id) => id !== turnId)
+      }));
     } catch (error) {
       set({ error: errorMessage(error) });
     }

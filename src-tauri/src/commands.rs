@@ -5,7 +5,7 @@ use crate::{
     db::Database,
     models::{
         Card, CreateCardInput, CreateQuoteInput, ModelProfile, Project, ProjectWorkspace, Quote,
-        RegeneratedTurn, SaveModelProfileInput, SendMessageInput, StreamEvent, Turn,
+        RegeneratedTurn, SaveModelProfileInput, SearchResult, SendMessageInput, StreamEvent, Turn,
     },
     models_service,
 };
@@ -94,6 +94,49 @@ pub async fn regenerate_turn(
         .await
         .map_err(|_| "Unable to create regeneration branch".to_owned())?;
     Ok(RegeneratedTurn { card, source_turn })
+}
+
+#[tauri::command]
+pub async fn search(
+    database: State<'_, Database>,
+    query: String,
+    project_id: Option<String>,
+) -> Result<Vec<SearchResult>, String> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+    if query.chars().count() > 500 {
+        return Err("Search query is too long".to_owned());
+    }
+    database
+        .search(query, project_id.as_deref())
+        .await
+        .map_err(|_| "Unable to search local content".to_owned())
+}
+
+#[tauri::command]
+pub async fn toggle_turn_favorite(
+    database: State<'_, Database>,
+    project_id: String,
+    card_id: String,
+    turn_id: String,
+) -> Result<bool, String> {
+    database
+        .toggle_turn_favorite(&project_id, &card_id, &turn_id)
+        .await
+        .map_err(|_| "Unable to update favorite".to_owned())
+}
+
+#[tauri::command]
+pub async fn favorite_turn_ids(
+    database: State<'_, Database>,
+    project_id: String,
+) -> Result<Vec<String>, String> {
+    database
+        .favorite_turn_ids(&project_id)
+        .await
+        .map_err(|_| "Unable to load favorites".to_owned())
 }
 
 #[tauri::command]

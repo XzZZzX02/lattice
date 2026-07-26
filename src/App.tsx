@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-  BrainCircuit, FolderPlus, GitBranch, Library, Network, Plus, Settings2,
-  Square, Workflow
+  BrainCircuit, FolderPlus, GitBranch, Library, Network, Plus, Search,
+  Settings2, Square, Star, Workflow
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -15,7 +15,8 @@ export function App() {
     activeRequestId, activeCardId, pendingQuotes, loadProjects, createProject,
     selectProject, loadModels, setActiveModel, sendMessage, cancelMessage,
     createCard, selectCard, renameCard, addQuote, removeQuote, editTurn,
-    deleteTurn, regenerateTurn
+    deleteTurn, regenerateTurn, search, searchResults, favoriteTurnIds,
+    toggleFavorite
   } = useWorkspaceStore();
   const [isCreating, setIsCreating] = useState(false);
   const [title, setTitle] = useState("");
@@ -27,6 +28,7 @@ export function App() {
     startOffset: number;
     endOffset: number;
   } | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     void loadProjects();
@@ -82,6 +84,23 @@ export function App() {
           <button><FolderPlus size={17} /> New folder</button>
           <button><Library size={17} /> Import document</button>
         </nav>
+        <form className="search-form" onSubmit={(event) => {
+          event.preventDefault();
+          void search(searchQuery);
+        }}>
+          <Search size={14} />
+          <input aria-label="Search workspace" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search local content" />
+        </form>
+        {searchResults.length > 0 && (
+          <div className="search-results">
+            {searchResults.map((result) => (
+              <button key={`${result.entityType}-${result.entityId}`} onClick={() => result.cardId && selectCard(result.cardId)}>
+                <strong>{result.title}</strong>
+                <span>{result.excerpt}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {isCreating && (
           <form className="new-project-form" onSubmit={submitProject}>
             <input
@@ -145,6 +164,11 @@ export function App() {
                         if (content?.trim()) void editTurn(turn.id, content);
                       }}>Edit</button>
                       <button onClick={() => void regenerateTurn(turn.id)}>Regenerate</button>
+                      <button
+                        aria-label={favoriteTurnIds.includes(turn.id) ? "Remove favorite" : "Favorite"}
+                        className={favoriteTurnIds.includes(turn.id) ? "favorited" : ""}
+                        onClick={() => void toggleFavorite(turn.id, turn.cardId)}
+                      ><Star size={11} fill="currentColor" /></button>
                       <button onClick={() => {
                         if (window.confirm("Delete this dialogue? Its previous value remains in the local revision log.")) {
                           void deleteTurn(turn.id);

@@ -157,3 +157,14 @@ pub struct RegeneratedTurn {
     pub card: Card,
     pub source_turn: Turn,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchResult {
+    pub entity_type: String,
+    pub entity_id: String,
+    pub project_id: String,
+    pub card_id: Option<String>,
+    pub title: String,
+    pub excerpt: String,
+}

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  cardApi, chatApi, modelApi, quoteApi, turnApi, workspaceApi
+  cardApi, chatApi, knowledgeApi, modelApi, quoteApi, turnApi, workspaceApi
 } from "../lib/ipc";
 import type { ProjectWorkspace } from "../types";
 import { useWorkspaceStore } from "./workspace";
@@ -15,7 +15,12 @@ vi.mock("../lib/ipc", () => ({
   chatApi: { send: vi.fn(), cancel: vi.fn() },
   cardApi: { create: vi.fn(), rename: vi.fn() },
   quoteApi: { create: vi.fn() },
-  turnApi: { edit: vi.fn(), delete: vi.fn(), regenerate: vi.fn() }
+  turnApi: { edit: vi.fn(), delete: vi.fn(), regenerate: vi.fn() },
+  knowledgeApi: {
+    search: vi.fn(),
+    toggleFavorite: vi.fn(),
+    favoriteTurnIds: vi.fn().mockResolvedValue([])
+  }
 }));
 
 const workspace: ProjectWorkspace = {
@@ -63,6 +68,8 @@ describe("workspace store", () => {
       activeRequestId: null
       ,activeCardId: null
       ,pendingQuotes: []
+      ,favoriteTurnIds: [],
+      searchResults: []
     });
   });
 
@@ -197,6 +204,29 @@ describe("workspace store", () => {
       expect.objectContaining({ cardId: "branch", content: "source" }),
       expect.any(Function)
     );
+  });
+
+  it("searches locally and toggles favorites", async () => {
+    useWorkspaceStore.setState({ workspace });
+    const result = {
+      entityType: "turn" as const,
+      entityId: "t1",
+      projectId: "project-1",
+      cardId: "card-1",
+      title: "attention_map",
+      excerpt: "code"
+    };
+    vi.mocked(knowledgeApi.search).mockResolvedValue([result]);
+    await useWorkspaceStore.getState().search("attention_map");
+    expect(useWorkspaceStore.getState().searchResults).toEqual([result]);
+
+    vi.mocked(knowledgeApi.toggleFavorite).mockResolvedValue(true);
+    await useWorkspaceStore.getState().toggleFavorite("t1", "card-1");
+    expect(useWorkspaceStore.getState().favoriteTurnIds).toEqual(["t1"]);
+
+    vi.mocked(knowledgeApi.toggleFavorite).mockResolvedValue(false);
+    await useWorkspaceStore.getState().toggleFavorite("t1", "card-1");
+    expect(useWorkspaceStore.getState().favoriteTurnIds).toEqual([]);
   });
 
   it("loads and selects the most recent project", async () => {

@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::models::{
     Card, CreateCardInput, CreateQuoteInput, ModelProfile, Project, ProjectWorkspace, Quote,
-    SaveModelProfileInput, Turn,
+    SaveModelProfileInput, SearchResult, Turn,
 };
 
 #[derive(Clone)]
@@ -446,6 +446,73 @@ impl Database {
             .await?;
         Ok((branch, turn))
     }
+
+    pub async fn search(
+        &self,
+        query: &str,
+        project_id: Option<&str>,
+    ) -> Result<Vec<SearchResult>, sqlx::Error> {
+        let escaped = query.replace('"', "\"\"");
+        let fts_query = format!("\"{escaped}\"");
+        sqlx::query_as(
+            "SELECT entity_type,entity_id,project_id,
+             CASE
+               WHEN entity_type='turn' THEN (SELECT card_id FROM turns WHERE turns.id=entity_id)
+               WHEN entity_type='card' THEN entity_id
+               ELSE NULL
+             END AS card_id,
+             title,substr(content,1,240) AS excerpt
+             FROM search_index
+             WHERE search_index MATCH ? AND (? IS NULL OR project_id = ?)
+             ORDER BY rank LIMIT 50",
+        )
+        .bind(fts_query)
+        .bind(project_id)
+        .bind(project_id)
+        .fetch_all(&self.pool)
+        .await
+    }
+
+    pub async fn toggle_turn_favorite(
+        &self,
+        project_id: &str,
+        card_id: &str,
+        turn_id: &str,
+    ) -> Result<bool, sqlx::Error> {
+        let existing: Option<String> =
+            sqlx::query_scalar("SELECT id FROM favorites WHERE project_id=? AND turn_id=? LIMIT 1")
+                .bind(project_id)
+                .bind(turn_id)
+                .fetch_optional(&self.pool)
+                .await?;
+        if let Some(id) = existing {
+            sqlx::query("DELETE FROM favorites WHERE id=?")
+                .bind(id)
+                .execute(&self.pool)
+                .await?;
+            return Ok(false);
+        }
+        sqlx::query(
+            "INSERT INTO favorites (id,project_id,card_id,turn_id,created_at) VALUES (?,?,?,?,?)",
+        )
+        .bind(Uuid::now_v7().to_string())
+        .bind(project_id)
+        .bind(card_id)
+        .bind(turn_id)
+        .bind(Utc::now().to_rfc3339())
+        .execute(&self.pool)
+        .await?;
+        Ok(true)
+    }
+
+    pub async fn favorite_turn_ids(&self, project_id: &str) -> Result<Vec<String>, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT turn_id FROM favorites WHERE project_id=? AND turn_id IS NOT NULL ORDER BY created_at",
+        )
+        .bind(project_id)
+        .fetch_all(&self.pool)
+        .await
+    }
 }
 
 async fn archive_turn_revision(
@@ -775,5 +842,50 @@ mod tests {
             .await
             .expect("revisions");
         assert_eq!(revision_count, 2);
+    }
+
+    #[tokio::test]
+    async fn search_supports_unicode_code_and_favorite_toggling() {
+        let database = Database::in_memory().await.expect("database");
+        let workspace = database.create_project("中文研究").await.expect("project");
+        let turn = database
+            .create_streaming_turn(
+                &workspace.cards[0].id,
+                "解释 attention_map",
+                "model",
+                "request",
+            )
+            .await
+            .expect("turn");
+        database
+            .update_turn(&turn.id, "这是一个代码片段", "completed", None)
+            .await
+            .expect("complete");
+
+        assert!(!database
+            .search("attention_map", Some(&workspace.project.id))
+            .await
+            .expect("code search")
+            .is_empty());
+        assert!(!database
+            .search("中文研究", None)
+            .await
+            .expect("unicode search")
+            .is_empty());
+        assert!(database
+            .toggle_turn_favorite(&workspace.project.id, &workspace.cards[0].id, &turn.id)
+            .await
+            .expect("favorite"));
+        assert_eq!(
+            database
+                .favorite_turn_ids(&workspace.project.id)
+                .await
+                .expect("favorites"),
+            vec![turn.id.clone()]
+        );
+        assert!(!database
+            .toggle_turn_favorite(&workspace.project.id, &workspace.cards[0].id, &turn.id)
+            .await
+            .expect("unfavorite"));
     }
 }

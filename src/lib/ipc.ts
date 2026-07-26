@@ -11,7 +11,8 @@ import type {
   StreamEvent,
   Turn,
   Quote
-  ,RegeneratedTurn
+  ,RegeneratedTurn,
+  SearchResult
 } from "../types";
 
 export const workspaceApi = {
@@ -63,4 +64,13 @@ export const turnApi = {
     invoke<ProjectWorkspace>("delete_turn", { turnId }),
   regenerate: (turnId: string) =>
     invoke<RegeneratedTurn>("regenerate_turn", { turnId })
+};
+
+export const knowledgeApi = {
+  search: (query: string, projectId?: string) =>
+    invoke<SearchResult[]>("search", { query, projectId }),
+  toggleFavorite: (projectId: string, cardId: string, turnId: string) =>
+    invoke<boolean>("toggle_turn_favorite", { projectId, cardId, turnId }),
+  favoriteTurnIds: (projectId: string) =>
+    invoke<string[]>("favorite_turn_ids", { projectId })
 };
