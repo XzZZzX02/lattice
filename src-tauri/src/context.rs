@@ -18,6 +18,21 @@ pub struct BuiltContext {
     pub snapshot_hash: String,
 }
 
+impl BuiltContext {
+    pub fn insert_system_before_last_user(&mut self, content: String) {
+        let index = self.messages.len().saturating_sub(1);
+        self.messages.insert(
+            index,
+            ChatMessage {
+                role: "system".to_owned(),
+                content,
+            },
+        );
+        enforce_budget(&mut self.messages);
+        self.snapshot_hash = hash_messages(&self.messages);
+    }
+}
+
 pub async fn build_context(database: &Database, card_id: &str) -> Result<BuiltContext, String> {
     let chain = database
         .ancestor_chain(card_id)
@@ -151,10 +166,21 @@ fn enforce_budget(messages: &mut Vec<ChatMessage>) {
         messages.remove(1);
     }
     if estimated_tokens(messages) > limit {
-        if let Some(system) = messages.first_mut() {
-            system
-                .content
-                .truncate(limit.saturating_mul(4).min(system.content.len()));
+        while estimated_tokens(messages) > limit {
+            let Some((index, length)) = messages
+                .iter()
+                .enumerate()
+                .map(|(index, message)| (index, message.content.chars().count()))
+                .max_by_key(|(_, length)| *length)
+            else {
+                break;
+            };
+            if length == 0 {
+                break;
+            }
+            let excess = estimated_tokens(messages).saturating_sub(limit);
+            let target = length.saturating_sub(excess.saturating_mul(4).max(1));
+            messages[index].content = messages[index].content.chars().take(target).collect();
         }
     }
 }
@@ -175,7 +201,10 @@ fn hash_messages(messages: &[ChatMessage]) -> String {
 mod tests {
     use crate::{db::Database, models::CreateCardInput};
 
-    use super::build_context;
+    use super::{
+        build_context, enforce_budget, estimated_tokens, ChatMessage, DEFAULT_CONTEXT_TOKENS,
+        OUTPUT_RESERVE_PERCENT,
+    };
 
     async fn complete_turn(database: &Database, card_id: &str, user: &str, assistant: &str) {
         let turn = database
@@ -258,5 +287,26 @@ mod tests {
         assert!(serialized.contains("kept answer"));
         assert!(serialized.contains("new branch"));
         assert!(!serialized.contains("old answer"));
+    }
+
+    #[test]
+    fn budget_enforcement_safely_truncates_unicode_source_blocks() {
+        let mut messages = vec![
+            ChatMessage {
+                role: "system".to_owned(),
+                content: "项目上下文".repeat(2_000),
+            },
+            ChatMessage {
+                role: "system".to_owned(),
+                content: "文档证据".repeat(2_000),
+            },
+            ChatMessage {
+                role: "user".to_owned(),
+                content: "问题".repeat(2_000),
+            },
+        ];
+        enforce_budget(&mut messages);
+        let limit = DEFAULT_CONTEXT_TOKENS * (100 - OUTPUT_RESERVE_PERCENT) / 100;
+        assert!(estimated_tokens(&messages) <= limit);
     }
 }

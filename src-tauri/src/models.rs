@@ -178,3 +178,66 @@ pub struct Favorite {
     pub turn_id: Option<String>,
     pub created_at: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Document {
+    pub id: String,
+    pub project_id: String,
+    pub name: String,
+    pub mime_type: String,
+    pub local_path: String,
+    pub content_hash: String,
+    pub status: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentImportResult {
+    pub document: Document,
+    pub duplicate: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentChunk {
+    pub id: String,
+    pub document_id: String,
+    pub content: String,
+    pub page_number: Option<i64>,
+    pub heading_path: String,
+    pub start_offset: i64,
+    pub end_offset: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RetrievedDocumentChunk {
+    pub chunk_id: String,
+    pub document_id: String,
+    pub document_name: String,
+    pub content: String,
+    pub page_number: Option<i64>,
+    pub heading_path: String,
+    pub start_offset: i64,
+    pub end_offset: i64,
+    pub score: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentCitation {
+    pub id: String,
+    pub turn_id: String,
+    pub chunk_id: Option<String>,
+    pub document_id: String,
+    pub document_name: String,
+    pub page_number: Option<i64>,
+    pub heading_path: String,
+    pub excerpt: String,
+    pub start_offset: i64,
+    pub end_offset: i64,
+    pub created_at: String,
+    pub available: bool,
+}

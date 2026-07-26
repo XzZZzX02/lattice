@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  cardApi, chatApi, fileApi, knowledgeApi, modelApi, quoteApi, turnApi,
-  workspaceApi
+  cardApi, chatApi, documentApi, fileApi, knowledgeApi, modelApi, quoteApi,
+  turnApi, workspaceApi
 } from "../lib/ipc";
 import type { ProjectWorkspace } from "../types";
 import { useWorkspaceStore } from "./workspace";
@@ -18,6 +18,12 @@ vi.mock("../lib/ipc", () => ({
   quoteApi: { create: vi.fn() },
   turnApi: { edit: vi.fn(), delete: vi.fn(), regenerate: vi.fn() },
   fileApi: { exportProject: vi.fn(), importProject: vi.fn() },
+  documentApi: {
+    list: vi.fn().mockResolvedValue([]),
+    citations: vi.fn().mockResolvedValue([]),
+    import: vi.fn(),
+    delete: vi.fn()
+  },
   knowledgeApi: {
     search: vi.fn(),
     toggleFavorite: vi.fn(),
@@ -72,6 +78,8 @@ describe("workspace store", () => {
       ,pendingQuotes: []
       ,favoriteTurnIds: [],
       searchResults: []
+      ,documents: []
+      ,documentCitations: []
     });
   });
 
@@ -269,6 +277,37 @@ describe("workspace store", () => {
     vi.mocked(fileApi.importProject).mockResolvedValue(null);
     expect(await useWorkspaceStore.getState().importProject()).toBe(false);
     expect(useWorkspaceStore.getState().workspace).toEqual(workspace);
+  });
+
+  it("imports, deduplicates, and deletes local documents", async () => {
+    useWorkspaceStore.setState({ workspace });
+    const document = {
+      id: "d1",
+      projectId: "project-1",
+      name: "notes.md",
+      mimeType: "text/markdown",
+      localPath: "/managed/d1.md",
+      contentHash: "hash",
+      status: "ready",
+      createdAt: ""
+    };
+    vi.mocked(documentApi.import).mockResolvedValue({
+      document,
+      duplicate: false
+    });
+    expect(await useWorkspaceStore.getState().importDocument()).toBe(true);
+    expect(useWorkspaceStore.getState().documents).toEqual([document]);
+
+    vi.mocked(documentApi.import).mockResolvedValue({
+      document,
+      duplicate: true
+    });
+    await useWorkspaceStore.getState().importDocument();
+    expect(useWorkspaceStore.getState().documents).toEqual([document]);
+
+    vi.mocked(documentApi.delete).mockResolvedValue();
+    await useWorkspaceStore.getState().deleteDocument("d1");
+    expect(useWorkspaceStore.getState().documents).toEqual([]);
   });
 
   it("creates and prepends a project", async () => {

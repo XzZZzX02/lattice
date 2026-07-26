@@ -5,8 +5,9 @@ use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use uuid::Uuid;
 
 use crate::models::{
-    Card, CreateCardInput, CreateQuoteInput, ModelProfile, Project, ProjectWorkspace, Quote,
-    SaveModelProfileInput, SearchResult, Turn,
+    Card, CreateCardInput, CreateQuoteInput, Document, DocumentChunk, DocumentCitation,
+    ModelProfile, Project, ProjectWorkspace, Quote, RetrievedDocumentChunk, SaveModelProfileInput,
+    SearchResult, Turn,
 };
 
 #[derive(Clone)]
@@ -24,6 +25,7 @@ impl Database {
         sqlx::migrate!("./migrations").run(&pool).await?;
         let database = Self { pool };
         database.recover_interrupted_turns().await?;
+        database.recover_interrupted_documents().await?;
         Ok(database)
     }
 
@@ -122,6 +124,13 @@ impl Database {
         .bind(Utc::now().to_rfc3339())
         .execute(&self.pool)
         .await?;
+        Ok(())
+    }
+
+    async fn recover_interrupted_documents(&self) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE documents SET status='failed' WHERE status='processing'")
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
@@ -548,8 +557,283 @@ impl Database {
         )
         .bind(project_id)
         .fetch_all(&self.pool)
+            .await
+    }
+
+    pub async fn list_documents(&self, project_id: &str) -> Result<Vec<Document>, sqlx::Error> {
+        sqlx::query_as("SELECT * FROM documents WHERE project_id=? ORDER BY created_at")
+            .bind(project_id)
+            .fetch_all(&self.pool)
+            .await
+    }
+
+    pub async fn find_document_by_hash(
+        &self,
+        project_id: &str,
+        content_hash: &str,
+    ) -> Result<Option<Document>, sqlx::Error> {
+        sqlx::query_as("SELECT * FROM documents WHERE project_id=? AND content_hash=?")
+            .bind(project_id)
+            .bind(content_hash)
+            .fetch_optional(&self.pool)
+            .await
+    }
+
+    pub async fn get_document(
+        &self,
+        project_id: &str,
+        document_id: &str,
+    ) -> Result<Document, sqlx::Error> {
+        sqlx::query_as("SELECT * FROM documents WHERE project_id=? AND id=?")
+            .bind(project_id)
+            .bind(document_id)
+            .fetch_one(&self.pool)
+            .await
+    }
+
+    pub async fn find_document_by_id(
+        &self,
+        document_id: &str,
+    ) -> Result<Option<Document>, sqlx::Error> {
+        sqlx::query_as("SELECT * FROM documents WHERE id=?")
+            .bind(document_id)
+            .fetch_optional(&self.pool)
+            .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn insert_document(
+        &self,
+        id: &str,
+        project_id: &str,
+        name: &str,
+        mime_type: &str,
+        local_path: &str,
+        content_hash: &str,
+    ) -> Result<Document, sqlx::Error> {
+        sqlx::query(
+            "INSERT INTO documents
+             (id,project_id,name,mime_type,local_path,content_hash,status,created_at)
+             VALUES (?,?,?,?,?,?,'processing',?)",
+        )
+        .bind(id)
+        .bind(project_id)
+        .bind(name)
+        .bind(mime_type)
+        .bind(local_path)
+        .bind(content_hash)
+        .bind(Utc::now().to_rfc3339())
+        .execute(&self.pool)
+        .await?;
+        self.get_document(project_id, id).await
+    }
+
+    pub async fn delete_document(
+        &self,
+        project_id: &str,
+        document_id: &str,
+    ) -> Result<(), sqlx::Error> {
+        let result = sqlx::query("DELETE FROM documents WHERE project_id=? AND id=?")
+            .bind(project_id)
+            .bind(document_id)
+            .execute(&self.pool)
+            .await?;
+        if result.rows_affected() != 1 {
+            return Err(sqlx::Error::RowNotFound);
+        }
+        Ok(())
+    }
+
+    pub async fn list_document_chunks(
+        &self,
+        project_id: &str,
+        document_id: &str,
+    ) -> Result<Vec<DocumentChunk>, sqlx::Error> {
+        sqlx::query_as(
+            "SELECT document_chunks.* FROM document_chunks
+             JOIN documents ON documents.id=document_chunks.document_id
+             WHERE documents.project_id=? AND documents.id=?
+             ORDER BY COALESCE(page_number,0),start_offset",
+        )
+        .bind(project_id)
+        .bind(document_id)
+        .fetch_all(&self.pool)
         .await
     }
+
+    pub async fn replace_document_chunks(
+        &self,
+        document: &Document,
+        chunks: &[crate::documents::ChunkDraft],
+    ) -> Result<Document, sqlx::Error> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("DELETE FROM document_chunks WHERE document_id=?")
+            .bind(&document.id)
+            .execute(&mut *tx)
+            .await?;
+        for chunk in chunks {
+            let heading_path = serde_json::to_string(&chunk.heading_path)
+                .map_err(|error| sqlx::Error::Encode(Box::new(error)))?;
+            sqlx::query(
+                "INSERT INTO document_chunks
+                 (id,document_id,content,page_number,heading_path,start_offset,end_offset)
+                 VALUES (?,?,?,?,?,?,?)",
+            )
+            .bind(Uuid::now_v7().to_string())
+            .bind(&document.id)
+            .bind(&chunk.content)
+            .bind(chunk.page_number)
+            .bind(heading_path)
+            .bind(chunk.start_offset)
+            .bind(chunk.end_offset)
+            .execute(&mut *tx)
+            .await?;
+        }
+        sqlx::query("UPDATE documents SET status='ready' WHERE id=? AND project_id=?")
+            .bind(&document.id)
+            .bind(&document.project_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        self.get_document(&document.project_id, &document.id).await
+    }
+
+    pub async fn set_document_status(
+        &self,
+        project_id: &str,
+        document_id: &str,
+        status: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE documents SET status=? WHERE id=? AND project_id=?")
+            .bind(status)
+            .bind(document_id)
+            .bind(project_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn retrieve_document_chunks(
+        &self,
+        project_id: &str,
+        query: &str,
+        limit: i64,
+    ) -> Result<Vec<RetrievedDocumentChunk>, sqlx::Error> {
+        let fts_query = document_fts_query(query);
+        if fts_query.is_empty() {
+            return Ok(Vec::new());
+        }
+        sqlx::query_as(
+            "SELECT document_chunks.id AS chunk_id,
+                    documents.id AS document_id,
+                    documents.name AS document_name,
+                    document_chunks.content,
+                    document_chunks.page_number,
+                    document_chunks.heading_path,
+                    document_chunks.start_offset,
+                    document_chunks.end_offset,
+                    bm25(document_chunk_search) AS score
+             FROM document_chunk_search
+             JOIN document_chunks ON document_chunks.id=document_chunk_search.chunk_id
+             JOIN documents ON documents.id=document_chunks.document_id
+             WHERE document_chunk_search MATCH ?
+               AND document_chunk_search.project_id=?
+             ORDER BY score LIMIT ?",
+        )
+        .bind(fts_query)
+        .bind(project_id)
+        .bind(limit.clamp(1, 10))
+        .fetch_all(&self.pool)
+        .await
+    }
+
+    pub async fn create_document_citations(
+        &self,
+        turn_id: &str,
+        chunks: &[RetrievedDocumentChunk],
+    ) -> Result<Vec<DocumentCitation>, sqlx::Error> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("DELETE FROM document_citations WHERE turn_id=?")
+            .bind(turn_id)
+            .execute(&mut *tx)
+            .await?;
+        for chunk in chunks {
+            sqlx::query(
+                "INSERT INTO document_citations
+                 (id,turn_id,chunk_id,document_id,document_name,page_number,heading_path,
+                  excerpt,start_offset,end_offset,created_at)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            )
+            .bind(Uuid::now_v7().to_string())
+            .bind(turn_id)
+            .bind(&chunk.chunk_id)
+            .bind(&chunk.document_id)
+            .bind(&chunk.document_name)
+            .bind(chunk.page_number)
+            .bind(&chunk.heading_path)
+            .bind(&chunk.content)
+            .bind(chunk.start_offset)
+            .bind(chunk.end_offset)
+            .bind(Utc::now().to_rfc3339())
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        self.document_citations_for_turn(turn_id).await
+    }
+
+    pub async fn document_citations_for_project(
+        &self,
+        project_id: &str,
+    ) -> Result<Vec<DocumentCitation>, sqlx::Error> {
+        sqlx::query_as(
+            "SELECT document_citations.*,
+                    document_citations.chunk_id IS NOT NULL AS available
+             FROM document_citations
+             JOIN turns ON turns.id=document_citations.turn_id
+             JOIN cards ON cards.id=turns.card_id
+             WHERE cards.project_id=?
+             ORDER BY document_citations.created_at",
+        )
+        .bind(project_id)
+        .fetch_all(&self.pool)
+        .await
+    }
+
+    async fn document_citations_for_turn(
+        &self,
+        turn_id: &str,
+    ) -> Result<Vec<DocumentCitation>, sqlx::Error> {
+        sqlx::query_as(
+            "SELECT document_citations.*,
+                    document_citations.chunk_id IS NOT NULL AS available
+             FROM document_citations WHERE turn_id=? ORDER BY created_at",
+        )
+        .bind(turn_id)
+        .fetch_all(&self.pool)
+        .await
+    }
+}
+
+fn document_fts_query(query: &str) -> String {
+    query
+        .split_whitespace()
+        .filter_map(|token| {
+            let token = token
+                .trim_matches(|character: char| !character.is_alphanumeric() && character != '_');
+            if token.is_empty() {
+                return None;
+            }
+            let token = token
+                .chars()
+                .take(100)
+                .collect::<String>()
+                .replace('"', "\"\"");
+            Some(format!("\"{token}\""))
+        })
+        .take(12)
+        .collect::<Vec<_>>()
+        .join(" OR ")
 }
 
 fn utf16_slice_matches(content: &str, start: i64, end: i64, selected: &str) -> bool {
@@ -696,12 +980,31 @@ mod tests {
             .create_streaming_turn(&workspace.cards[0].id, "Hello", "model", "request")
             .await
             .expect("turn");
+        let document = database
+            .insert_document(
+                "recovery-document",
+                &workspace.project.id,
+                "notes.txt",
+                "text/plain",
+                "/tmp/recovery-document",
+                "recovery-hash",
+            )
+            .await
+            .expect("document");
         database.pool().close().await;
 
         let reopened = Database::open(&path).await.expect("reopen");
         assert_eq!(
             reopened.get_turn(&turn.id).await.expect("recovered").status,
             "interrupted"
+        );
+        assert_eq!(
+            reopened
+                .get_document(&workspace.project.id, &document.id)
+                .await
+                .expect("recovered document")
+                .status,
+            "failed"
         );
     }
 

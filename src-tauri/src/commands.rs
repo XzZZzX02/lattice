@@ -3,12 +3,72 @@ use tauri::{ipc::Channel, State};
 use crate::{
     chat::RequestRegistry,
     db::Database,
+    documents::DocumentStore,
     models::{
-        Card, CreateCardInput, CreateQuoteInput, ModelProfile, Project, ProjectWorkspace, Quote,
-        RegeneratedTurn, SaveModelProfileInput, SearchResult, SendMessageInput, StreamEvent, Turn,
+        Card, CreateCardInput, CreateQuoteInput, Document, DocumentChunk, DocumentCitation,
+        DocumentImportResult, ModelProfile, Project, ProjectWorkspace, Quote, RegeneratedTurn,
+        SaveModelProfileInput, SearchResult, SendMessageInput, StreamEvent, Turn,
     },
     models_service,
 };
+
+#[tauri::command]
+pub async fn list_documents(
+    database: State<'_, Database>,
+    project_id: String,
+) -> Result<Vec<Document>, String> {
+    database
+        .list_documents(&project_id)
+        .await
+        .map_err(|_| "Unable to load documents".to_owned())
+}
+
+#[tauri::command]
+pub async fn list_document_chunks(
+    database: State<'_, Database>,
+    project_id: String,
+    document_id: String,
+) -> Result<Vec<DocumentChunk>, String> {
+    database
+        .list_document_chunks(&project_id, &document_id)
+        .await
+        .map_err(|_| "Unable to load document chunks".to_owned())
+}
+
+#[tauri::command]
+pub async fn list_document_citations(
+    database: State<'_, Database>,
+    project_id: String,
+) -> Result<Vec<DocumentCitation>, String> {
+    database
+        .document_citations_for_project(&project_id)
+        .await
+        .map_err(|_| "Unable to load document citations".to_owned())
+}
+
+#[tauri::command]
+pub async fn import_document(
+    database: State<'_, Database>,
+    document_store: State<'_, DocumentStore>,
+    project_id: String,
+    path: String,
+) -> Result<DocumentImportResult, String> {
+    document_store
+        .ingest(&database, &project_id, std::path::Path::new(&path))
+        .await
+}
+
+#[tauri::command]
+pub async fn delete_document(
+    database: State<'_, Database>,
+    document_store: State<'_, DocumentStore>,
+    project_id: String,
+    document_id: String,
+) -> Result<(), String> {
+    document_store
+        .delete(&database, &project_id, &document_id)
+        .await
+}
 
 fn validate_title(title: &str) -> Result<&str, String> {
     let value = title.trim();

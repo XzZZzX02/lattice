@@ -4,5 +4,5 @@
 - [x] Phase B — Chat
 - [x] Phase C — Branching
 - [x] Phase D — Knowledge management
-- [ ] Phase E — Documents
+- [x] Phase E — Documents
 - [ ] Phase F — Mindscape

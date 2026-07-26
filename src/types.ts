@@ -131,3 +131,44 @@ export interface SearchResult {
   title: string;
   excerpt: string;
 }
+
+export interface LocalDocument {
+  id: string;
+  projectId: string;
+  name: string;
+  mimeType: string;
+  localPath: string;
+  contentHash: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface DocumentImportResult {
+  document: LocalDocument;
+  duplicate: boolean;
+}
+
+export interface DocumentChunk {
+  id: string;
+  documentId: string;
+  content: string;
+  pageNumber: number | null;
+  headingPath: string;
+  startOffset: number;
+  endOffset: number;
+}
+
+export interface DocumentCitation {
+  id: string;
+  turnId: string;
+  chunkId: string | null;
+  documentId: string;
+  documentName: string;
+  pageNumber: number | null;
+  headingPath: string;
+  excerpt: string;
+  startOffset: number;
+  endOffset: number;
+  createdAt: string;
+  available: boolean;
+}

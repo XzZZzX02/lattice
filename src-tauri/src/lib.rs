@@ -3,8 +3,10 @@ pub mod chat;
 pub mod commands;
 pub mod context;
 pub mod db;
+pub mod documents;
 pub mod models;
 pub mod models_service;
+pub mod retrieval;
 
 use tauri::Manager;
 
@@ -21,7 +23,10 @@ pub fn run() {
             let database = tauri::async_runtime::block_on(db::Database::open(
                 &data_dir.join("lattice.sqlite3"),
             ))?;
+            let document_store = documents::DocumentStore::new(data_dir.join("documents"))?;
+            tauri::async_runtime::block_on(document_store.recover(&database))?;
             app.manage(database);
+            app.manage(document_store);
             app.manage(chat::RequestRegistry::default());
             Ok(())
         })
@@ -39,6 +44,11 @@ pub fn run() {
             commands::search,
             commands::toggle_turn_favorite,
             commands::favorite_turn_ids,
+            commands::list_documents,
+            commands::list_document_chunks,
+            commands::list_document_citations,
+            commands::import_document,
+            commands::delete_document,
             commands::export_project,
             commands::import_project,
             commands::rename_card,

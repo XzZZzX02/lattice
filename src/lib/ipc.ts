@@ -4,7 +4,11 @@ import type {
   Card,
   CreateCardInput,
   CreateQuoteInput,
+  DocumentChunk,
+  DocumentCitation,
   ModelProfile,
+  DocumentImportResult,
+  LocalDocument,
   Project,
   ProjectWorkspace,
   Quote,
@@ -105,6 +109,29 @@ export const fileApi = {
     if (typeof path !== "string") return null;
     return invoke<ProjectWorkspace>("import_project", { path });
   }
+};
+
+export const documentApi = {
+  list: (projectId: string) =>
+    invoke<LocalDocument[]>("list_documents", { projectId }),
+  chunks: (projectId: string, documentId: string) =>
+    invoke<DocumentChunk[]>("list_document_chunks", { projectId, documentId }),
+  citations: (projectId: string) =>
+    invoke<DocumentCitation[]>("list_document_citations", { projectId }),
+  import: async (projectId: string) => {
+    const path = await open({
+      directory: false,
+      multiple: false,
+      filters: [{
+        name: "Local documents",
+        extensions: ["pdf", "md", "txt"]
+      }]
+    });
+    if (typeof path !== "string") return null;
+    return invoke<DocumentImportResult>("import_document", { projectId, path });
+  },
+  delete: (projectId: string, documentId: string) =>
+    invoke<void>("delete_document", { projectId, documentId })
 };
 
 function safeFilename(value: string): string {
