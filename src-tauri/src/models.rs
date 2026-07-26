@@ -81,3 +81,38 @@ pub struct SaveModelProfileInput {
     pub model: String,
     pub api_key: Option<String>,
 }
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendMessageInput {
+    pub card_id: String,
+    pub model_profile_id: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum StreamEvent {
+    Started {
+        request_id: String,
+        turn: Turn,
+    },
+    Delta {
+        request_id: String,
+        turn_id: String,
+        delta: String,
+    },
+    Completed {
+        request_id: String,
+        turn: Turn,
+    },
+    Cancelled {
+        request_id: String,
+        turn: Turn,
+    },
+    Failed {
+        request_id: String,
+        turn: Turn,
+        message: String,
+    },
+}

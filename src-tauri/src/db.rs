@@ -169,6 +169,65 @@ impl Database {
         .await?;
         self.get_model_profile(&id).await
     }
+
+    pub async fn create_streaming_turn(
+        &self,
+        card_id: &str,
+        user_content: &str,
+        model_profile_id: &str,
+        request_id: &str,
+    ) -> Result<Turn, sqlx::Error> {
+        let id = Uuid::now_v7().to_string();
+        let now = Utc::now().to_rfc3339();
+        sqlx::query(
+            "INSERT INTO turns (id,card_id,user_content,model_profile_id,status,request_id,created_at,updated_at)
+             VALUES (?,?,?,?,'streaming',?,?,?)",
+        )
+        .bind(&id)
+        .bind(card_id)
+        .bind(user_content)
+        .bind(model_profile_id)
+        .bind(request_id)
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.pool)
+        .await?;
+        self.get_turn(&id).await
+    }
+
+    pub async fn get_turn(&self, id: &str) -> Result<Turn, sqlx::Error> {
+        sqlx::query_as("SELECT * FROM turns WHERE id = ?")
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await
+    }
+
+    pub async fn update_turn(
+        &self,
+        id: &str,
+        content: &str,
+        status: &str,
+        error_message: Option<&str>,
+    ) -> Result<Turn, sqlx::Error> {
+        sqlx::query(
+            "UPDATE turns SET assistant_content = ?, status = ?, error_message = ?, updated_at = ? WHERE id = ?",
+        )
+        .bind(content)
+        .bind(status)
+        .bind(error_message)
+        .bind(Utc::now().to_rfc3339())
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        self.get_turn(id).await
+    }
+
+    pub async fn turns_for_card(&self, card_id: &str) -> Result<Vec<Turn>, sqlx::Error> {
+        sqlx::query_as("SELECT * FROM turns WHERE card_id = ? ORDER BY created_at")
+            .bind(card_id)
+            .fetch_all(&self.pool)
+            .await
+    }
 }
 
 #[cfg(test)]
@@ -234,5 +293,24 @@ mod tests {
         assert!(!serialized.contains("not-persisted"));
         assert_eq!(profile.base_url, "https://example.test/v1");
         assert_eq!(profile.keychain_ref.as_deref(), Some("credential-ref"));
+    }
+
+    #[tokio::test]
+    async fn streaming_turn_can_be_completed_incrementally() {
+        let database = Database::in_memory().await.expect("database");
+        let workspace = database.create_project("Chat").await.expect("project");
+        let card_id = &workspace.cards[0].id;
+        let turn = database
+            .create_streaming_turn(card_id, "Hello", "model", "request")
+            .await
+            .expect("turn");
+
+        assert_eq!(turn.status, "streaming");
+        let completed = database
+            .update_turn(&turn.id, "World", "completed", None)
+            .await
+            .expect("complete");
+        assert_eq!(completed.assistant_content, "World");
+        assert_eq!(completed.status, "completed");
     }
 }

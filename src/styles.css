@@ -37,6 +37,11 @@ button { color: inherit; }
 .message { margin-top: 24px; line-height: 1.65; }
 .message.user { margin-left: auto; background: #353b37; border-radius: 14px 14px 4px 14px; padding: 12px 15px; width: max-content; max-width: 80%; }
 .message.assistant { color: #c8d0cb; }
+.message.assistant.streaming { opacity: .85; }
+.message.assistant pre { overflow: auto; padding: 14px; border-radius: 10px; background: #0c0f0d; }
+.message.assistant code { font-family: "SFMono-Regular", Consolas, monospace; }
+.turn + .turn { border-top: 1px solid #303632; margin-top: 28px; padding-top: 4px; }
+.turn-error { color: #ff9999; font-size: 12px; }
 .empty-card { min-height: 250px; display: grid; place-items: center; align-content: center; color: #7b857e; }
 .empty-card p { margin: 10px 0; }
 .navigator { align-self: center; height: 380px; border-left: 1px solid #232824; padding-left: 22px; }

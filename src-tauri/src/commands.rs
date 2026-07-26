@@ -1,8 +1,12 @@
-use tauri::State;
+use tauri::{ipc::Channel, State};
 
 use crate::{
+    chat::RequestRegistry,
     db::Database,
-    models::{ModelProfile, Project, ProjectWorkspace, SaveModelProfileInput},
+    models::{
+        ModelProfile, Project, ProjectWorkspace, SaveModelProfileInput, SendMessageInput,
+        StreamEvent, Turn,
+    },
     models_service,
 };
 
@@ -12,6 +16,28 @@ fn validate_title(title: &str) -> Result<&str, String> {
         return Err("Project title must contain 1–200 characters".to_owned());
     }
     Ok(value)
+}
+
+#[tauri::command]
+pub async fn send_message(
+    database: State<'_, Database>,
+    requests: State<'_, RequestRegistry>,
+    input: SendMessageInput,
+    on_event: Channel<StreamEvent>,
+) -> Result<Turn, String> {
+    crate::chat::run_chat(&database, &requests, input, on_event).await
+}
+
+#[tauri::command]
+pub async fn cancel_message(
+    requests: State<'_, RequestRegistry>,
+    request_id: String,
+) -> Result<(), String> {
+    if requests.cancel(&request_id).await {
+        Ok(())
+    } else {
+        Err("The generation is no longer active".to_owned())
+    }
 }
 
 #[tauri::command]

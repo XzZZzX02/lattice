@@ -1,18 +1,25 @@
 import { useEffect, useState } from "react";
-import { BrainCircuit, FolderPlus, Library, Plus, Settings2 } from "lucide-react";
+import { BrainCircuit, FolderPlus, Library, Plus, Settings2, Square } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useWorkspaceStore } from "./store/workspace";
 import { ModelSettings } from "./components/ModelSettings";
 
 export function App() {
-  const { projects, workspace, loading, error, loadProjects, createProject, selectProject } =
-    useWorkspaceStore();
+  const {
+    projects, workspace, loading, error, modelProfiles, activeModelProfileId,
+    activeRequestId, loadProjects, createProject, selectProject, loadModels,
+    setActiveModel, sendMessage, cancelMessage
+  } = useWorkspaceStore();
   const [isCreating, setIsCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
     void loadProjects();
-  }, [loadProjects]);
+    void loadModels();
+  }, [loadModels, loadProjects]);
 
   async function submitProject(event: React.FormEvent) {
     event.preventDefault();
@@ -25,6 +32,15 @@ export function App() {
   const activeCard = workspace?.cards.find(
     (card) => card.id === workspace.project.rootCardId
   );
+  const turns = workspace?.turns.filter((turn) => turn.cardId === activeCard?.id) ?? [];
+
+  async function submitMessage(event: React.FormEvent) {
+    event.preventDefault();
+    if (!activeCard || !message.trim() || activeRequestId) return;
+    const content = message;
+    setMessage("");
+    await sendMessage(activeCard.id, content);
+  }
 
   return (
     <main className="app-shell">
@@ -80,20 +96,50 @@ export function App() {
               <article className="conversation-card">
                 <div className="card-kicker">{activeCard?.relation.toUpperCase()} CARD</div>
                 <h2>{activeCard?.title}</h2>
-                <div className="empty-card">
+                {turns.length === 0 && <div className="empty-card">
                   <BrainCircuit size={28} />
                   <p>Ask the first question to start this card.</p>
-                </div>
+                </div>}
+                {turns.map((turn) => (
+                  <div className="turn" key={turn.id}>
+                    <div className="message user">{turn.userContent}</div>
+                    <div className={`message assistant ${turn.status}`}>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {turn.assistantContent || (turn.status === "streaming" ? "Thinking…" : "")}
+                      </ReactMarkdown>
+                      {turn.errorMessage && <p className="turn-error">{turn.errorMessage}</p>}
+                    </div>
+                  </div>
+                ))}
               </article>
               <aside className="navigator" aria-label="Card tree">
                 <p className="eyebrow">Card map</p>
                 <div className="tree"><button className="tree-node selected">{activeCard?.title}</button></div>
               </aside>
             </div>
-            <form className="composer">
-              <select aria-label="Model"><option>Configure a model</option></select>
-              <textarea aria-label="Message" placeholder="Explore anything…  ⌘↵ to send" rows={1} disabled />
-              <button type="button" aria-label="Send" disabled>↑</button>
+            <form className="composer" onSubmit={submitMessage}>
+              <select aria-label="Model" value={activeModelProfileId ?? ""} onChange={(e) => setActiveModel(e.target.value)}>
+                <option value="">Configure a model</option>
+                {modelProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
+              </select>
+              <textarea
+                aria-label="Message"
+                placeholder="Explore anything…  ⌘↵ to send"
+                rows={1}
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    e.currentTarget.form?.requestSubmit();
+                  }
+                }}
+              />
+              {activeRequestId ? (
+                <button type="button" aria-label="Stop" onClick={() => void cancelMessage()}><Square size={13} /></button>
+              ) : (
+                <button type="submit" aria-label="Send" disabled={!message.trim() || !activeModelProfileId}>↑</button>
+              )}
             </form>
           </>
         ) : (
@@ -106,7 +152,10 @@ export function App() {
           </section>
         )}
       </section>
-      <ModelSettings open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <ModelSettings open={settingsOpen} onOpenChange={(open) => {
+        setSettingsOpen(open);
+        if (!open) void loadModels();
+      }} />
     </main>
   );
 }

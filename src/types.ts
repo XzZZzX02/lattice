@@ -77,3 +77,16 @@ export interface SaveModelProfileInput {
   model: string;
   apiKey?: string;
 }
+
+export interface SendMessageInput {
+  cardId: string;
+  modelProfileId: string;
+  content: string;
+}
+
+export type StreamEvent =
+  | { type: "started"; requestId: string; turn: Turn }
+  | { type: "delta"; requestId: string; turnId: string; delta: string }
+  | { type: "completed"; requestId: string; turn: Turn }
+  | { type: "cancelled"; requestId: string; turn: Turn }
+  | { type: "failed"; requestId: string; turn: Turn; message: string };
