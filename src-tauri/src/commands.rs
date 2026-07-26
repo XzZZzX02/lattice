@@ -5,12 +5,106 @@ use crate::{
     db::Database,
     documents::DocumentStore,
     models::{
-        Card, CreateCardInput, CreateQuoteInput, Document, DocumentChunk, DocumentCitation,
-        DocumentImportResult, ModelProfile, Project, ProjectWorkspace, Quote, RegeneratedTurn,
-        SaveModelProfileInput, SearchResult, SendMessageInput, StreamEvent, Turn,
+        ApplyMindSuggestionsInput, Card, CreateCardInput, CreateMindEdgeInput, CreateMindNodeInput,
+        CreateQuoteInput, Document, DocumentChunk, DocumentCitation, DocumentImportResult,
+        MindEdge, MindNode, MindSuggestionSet, MindscapeGraph, ModelProfile, Project,
+        ProjectWorkspace, Quote, RegeneratedTurn, SaveModelProfileInput, SearchResult,
+        SendMessageInput, StreamEvent, Turn,
     },
     models_service,
 };
+
+#[tauri::command]
+pub async fn suggest_mindscape(
+    database: State<'_, Database>,
+    project_id: String,
+    source_card_id: String,
+    model_profile_id: String,
+) -> Result<MindSuggestionSet, String> {
+    crate::mindscape::suggest(&database, &project_id, &source_card_id, &model_profile_id).await
+}
+
+#[tauri::command]
+pub async fn apply_mind_suggestions(
+    database: State<'_, Database>,
+    input: ApplyMindSuggestionsInput,
+) -> Result<MindscapeGraph, String> {
+    crate::mindscape::apply(&database, input).await
+}
+
+#[tauri::command]
+pub async fn get_mindscape(
+    database: State<'_, Database>,
+    project_id: String,
+) -> Result<MindscapeGraph, String> {
+    database
+        .get_mindscape(&project_id)
+        .await
+        .map_err(|_| "Unable to load Mindscape".to_owned())
+}
+
+#[tauri::command]
+pub async fn create_mind_node(
+    database: State<'_, Database>,
+    input: CreateMindNodeInput,
+) -> Result<MindNode, String> {
+    if input.label.trim().is_empty() || input.label.chars().count() > 160 {
+        return Err("Concept label must contain 1–160 characters".to_owned());
+    }
+    if input.description.chars().count() > 4_000 {
+        return Err("Concept description is too long".to_owned());
+    }
+    database
+        .create_mind_node(&input)
+        .await
+        .map_err(|_| "Unable to add traceable concept".to_owned())
+}
+
+#[tauri::command]
+pub async fn create_mind_edge(
+    database: State<'_, Database>,
+    input: CreateMindEdgeInput,
+) -> Result<MindEdge, String> {
+    if input.relation.trim().is_empty() || input.relation.chars().count() > 120 {
+        return Err("Relation must contain 1–120 characters".to_owned());
+    }
+    database
+        .create_mind_edge(&input)
+        .await
+        .map_err(|_| "Unable to connect concepts".to_owned())
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn update_mind_node(
+    database: State<'_, Database>,
+    project_id: String,
+    node_id: String,
+    label: String,
+    description: String,
+    position_x: f64,
+    position_y: f64,
+) -> Result<MindNode, String> {
+    if label.trim().is_empty()
+        || label.chars().count() > 160
+        || description.chars().count() > 4_000
+        || !position_x.is_finite()
+        || !position_y.is_finite()
+    {
+        return Err("Concept update is invalid".to_owned());
+    }
+    database
+        .update_mind_node(
+            &project_id,
+            &node_id,
+            label.trim(),
+            description.trim(),
+            position_x,
+            position_y,
+        )
+        .await
+        .map_err(|_| "Unable to update concept".to_owned())
+}
 
 #[tauri::command]
 pub async fn list_documents(
@@ -213,9 +307,10 @@ pub async fn export_project(
 #[tauri::command]
 pub async fn import_project(
     database: State<'_, Database>,
+    document_store: State<'_, DocumentStore>,
     path: String,
 ) -> Result<ProjectWorkspace, String> {
-    crate::backup::import_project(&database, std::path::Path::new(&path)).await
+    crate::backup::import_project(&database, &document_store, std::path::Path::new(&path)).await
 }
 
 #[tauri::command]

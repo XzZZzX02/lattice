@@ -5,9 +5,9 @@ use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use uuid::Uuid;
 
 use crate::models::{
-    Card, CreateCardInput, CreateQuoteInput, Document, DocumentChunk, DocumentCitation,
-    ModelProfile, Project, ProjectWorkspace, Quote, RetrievedDocumentChunk, SaveModelProfileInput,
-    SearchResult, Turn,
+    Card, CreateCardInput, CreateMindEdgeInput, CreateMindNodeInput, CreateQuoteInput, Document,
+    DocumentChunk, DocumentCitation, MindEdge, MindNode, MindscapeGraph, ModelProfile, Project,
+    ProjectWorkspace, Quote, RetrievedDocumentChunk, SaveModelProfileInput, SearchResult, Turn,
 };
 
 #[derive(Clone)]
@@ -813,6 +813,273 @@ impl Database {
         .fetch_all(&self.pool)
         .await
     }
+
+    pub async fn get_mindscape(&self, project_id: &str) -> Result<MindscapeGraph, sqlx::Error> {
+        let nodes =
+            sqlx::query_as("SELECT * FROM mind_nodes WHERE project_id=? ORDER BY created_at")
+                .bind(project_id)
+                .fetch_all(&self.pool)
+                .await?;
+        let edges =
+            sqlx::query_as("SELECT * FROM mind_edges WHERE project_id=? ORDER BY created_at")
+                .bind(project_id)
+                .fetch_all(&self.pool)
+                .await?;
+        let sources = sqlx::query_as(
+            "SELECT mind_node_sources.* FROM mind_node_sources
+             JOIN mind_nodes ON mind_nodes.id=mind_node_sources.mind_node_id
+             WHERE mind_nodes.project_id=? ORDER BY mind_node_sources.created_at",
+        )
+        .bind(project_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(MindscapeGraph {
+            nodes,
+            edges,
+            sources,
+        })
+    }
+
+    pub async fn create_mind_node(
+        &self,
+        input: &CreateMindNodeInput,
+    ) -> Result<MindNode, sqlx::Error> {
+        if input.source_card_id.is_none() && input.source_turn_id.is_none() {
+            return Err(sqlx::Error::RowNotFound);
+        }
+        let source_card_id = if let Some(turn_id) = &input.source_turn_id {
+            let turn_card_id: String = sqlx::query_scalar(
+                "SELECT turns.card_id FROM turns
+                 JOIN cards ON cards.id=turns.card_id
+                 WHERE turns.id=? AND cards.project_id=?",
+            )
+            .bind(turn_id)
+            .bind(&input.project_id)
+            .fetch_one(&self.pool)
+            .await?;
+            if input
+                .source_card_id
+                .as_deref()
+                .is_some_and(|card_id| card_id != turn_card_id)
+            {
+                return Err(sqlx::Error::RowNotFound);
+            }
+            Some(turn_card_id)
+        } else {
+            let card_id = input
+                .source_card_id
+                .as_deref()
+                .ok_or(sqlx::Error::RowNotFound)?;
+            sqlx::query("SELECT 1 FROM cards WHERE id=? AND project_id=?")
+                .bind(card_id)
+                .bind(&input.project_id)
+                .fetch_one(&self.pool)
+                .await?;
+            Some(card_id.to_owned())
+        };
+        if let Some(existing) = sqlx::query_as::<_, MindNode>(
+            "SELECT * FROM mind_nodes WHERE project_id=?
+             AND ((? IS NOT NULL AND source_turn_id=?)
+               OR (? IS NULL AND source_turn_id IS NULL AND source_card_id=?))
+             AND label=?
+             LIMIT 1",
+        )
+        .bind(&input.project_id)
+        .bind(&input.source_turn_id)
+        .bind(&input.source_turn_id)
+        .bind(&input.source_turn_id)
+        .bind(&source_card_id)
+        .bind(&input.label)
+        .fetch_optional(&self.pool)
+        .await?
+        {
+            return Ok(existing);
+        }
+        let id = Uuid::now_v7().to_string();
+        let now = Utc::now().to_rfc3339();
+        let position: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM mind_nodes WHERE project_id=?")
+                .bind(&input.project_id)
+                .fetch_one(&self.pool)
+                .await?;
+        let mut tx = self.pool.begin().await?;
+        sqlx::query(
+            "INSERT INTO mind_nodes
+             (id,project_id,label,description,source_card_id,source_turn_id,
+              position_x,position_y,created_at)
+             VALUES (?,?,?,?,?,?,?,?,?)",
+        )
+        .bind(&id)
+        .bind(&input.project_id)
+        .bind(&input.label)
+        .bind(&input.description)
+        .bind(&source_card_id)
+        .bind(&input.source_turn_id)
+        .bind((position % 3) as f64 * 180.0)
+        .bind((position / 3) as f64 * 120.0)
+        .bind(&now)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "INSERT INTO mind_node_sources
+             (id,mind_node_id,card_id,turn_id,created_at) VALUES (?,?,?,?,?)",
+        )
+        .bind(Uuid::now_v7().to_string())
+        .bind(&id)
+        .bind(&source_card_id)
+        .bind(&input.source_turn_id)
+        .bind(&now)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        sqlx::query_as("SELECT * FROM mind_nodes WHERE id=?")
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await
+    }
+
+    pub async fn create_mind_edge(
+        &self,
+        input: &CreateMindEdgeInput,
+    ) -> Result<MindEdge, sqlx::Error> {
+        if input.source_id == input.target_id {
+            return Err(sqlx::Error::RowNotFound);
+        }
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM mind_nodes
+             WHERE project_id=? AND id IN (?,?)",
+        )
+        .bind(&input.project_id)
+        .bind(&input.source_id)
+        .bind(&input.target_id)
+        .fetch_one(&self.pool)
+        .await?;
+        if count != 2 {
+            return Err(sqlx::Error::RowNotFound);
+        }
+        let id = Uuid::now_v7().to_string();
+        let now = Utc::now().to_rfc3339();
+        sqlx::query(
+            "INSERT INTO mind_edges
+             (id,project_id,source_id,target_id,relation,created_at) VALUES (?,?,?,?,?,?)",
+        )
+        .bind(&id)
+        .bind(&input.project_id)
+        .bind(&input.source_id)
+        .bind(&input.target_id)
+        .bind(&input.relation)
+        .bind(&now)
+        .execute(&self.pool)
+        .await?;
+        sqlx::query_as("SELECT * FROM mind_edges WHERE id=?")
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await
+    }
+
+    pub async fn update_mind_node(
+        &self,
+        project_id: &str,
+        node_id: &str,
+        label: &str,
+        description: &str,
+        position_x: f64,
+        position_y: f64,
+    ) -> Result<MindNode, sqlx::Error> {
+        let result = sqlx::query(
+            "UPDATE mind_nodes
+             SET label=?,description=?,position_x=?,position_y=?
+             WHERE id=? AND project_id=?",
+        )
+        .bind(label)
+        .bind(description)
+        .bind(position_x)
+        .bind(position_y)
+        .bind(node_id)
+        .bind(project_id)
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() != 1 {
+            return Err(sqlx::Error::RowNotFound);
+        }
+        sqlx::query_as("SELECT * FROM mind_nodes WHERE id=?")
+            .bind(node_id)
+            .fetch_one(&self.pool)
+            .await
+    }
+
+    pub async fn merge_mind_nodes(
+        &self,
+        project_id: &str,
+        source_node_id: &str,
+        target_node_id: &str,
+    ) -> Result<(), sqlx::Error> {
+        if source_node_id == target_node_id {
+            return Err(sqlx::Error::RowNotFound);
+        }
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM mind_nodes
+             WHERE project_id=? AND id IN (?,?)",
+        )
+        .bind(project_id)
+        .bind(source_node_id)
+        .bind(target_node_id)
+        .fetch_one(&self.pool)
+        .await?;
+        if count != 2 {
+            return Err(sqlx::Error::RowNotFound);
+        }
+        let sources = sqlx::query_as::<_, crate::models::MindNodeSource>(
+            "SELECT * FROM mind_node_sources WHERE mind_node_id=?",
+        )
+        .bind(source_node_id)
+        .fetch_all(&self.pool)
+        .await?;
+        let mut tx = self.pool.begin().await?;
+        for source in sources {
+            sqlx::query(
+                "INSERT INTO mind_node_sources
+                 (id,mind_node_id,card_id,turn_id,created_at) VALUES (?,?,?,?,?)",
+            )
+            .bind(Uuid::now_v7().to_string())
+            .bind(target_node_id)
+            .bind(source.card_id)
+            .bind(source.turn_id)
+            .bind(source.created_at)
+            .execute(&mut *tx)
+            .await?;
+        }
+        sqlx::query(
+            "DELETE FROM mind_edges WHERE project_id=?
+             AND ((source_id=? AND target_id=?) OR (source_id=? AND target_id=?))",
+        )
+        .bind(project_id)
+        .bind(source_node_id)
+        .bind(target_node_id)
+        .bind(target_node_id)
+        .bind(source_node_id)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query("UPDATE mind_edges SET source_id=? WHERE project_id=? AND source_id=?")
+            .bind(target_node_id)
+            .bind(project_id)
+            .bind(source_node_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("UPDATE mind_edges SET target_id=? WHERE project_id=? AND target_id=?")
+            .bind(target_node_id)
+            .bind(project_id)
+            .bind(source_node_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM mind_nodes WHERE project_id=? AND id=?")
+            .bind(project_id)
+            .bind(source_node_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(())
+    }
 }
 
 fn document_fts_query(query: &str) -> String {
@@ -1276,5 +1543,82 @@ mod tests {
             .toggle_turn_favorite(&other.project.id, &other.cards[0].id, &turn.id)
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    async fn mindscape_nodes_keep_project_scoped_card_and_turn_sources() {
+        let database = Database::in_memory().await.expect("database");
+        let workspace = database.create_project("Mindscape").await.expect("project");
+        let turn = database
+            .create_streaming_turn(&workspace.cards[0].id, "Concept", "model", "request")
+            .await
+            .expect("turn");
+        let card_node = database
+            .create_mind_node(&crate::models::CreateMindNodeInput {
+                project_id: workspace.project.id.clone(),
+                label: "Card concept".to_owned(),
+                description: "From card".to_owned(),
+                source_card_id: Some(workspace.cards[0].id.clone()),
+                source_turn_id: None,
+            })
+            .await
+            .expect("card node");
+        let turn_node = database
+            .create_mind_node(&crate::models::CreateMindNodeInput {
+                project_id: workspace.project.id.clone(),
+                label: "Turn concept".to_owned(),
+                description: "From favorite".to_owned(),
+                source_card_id: Some(workspace.cards[0].id.clone()),
+                source_turn_id: Some(turn.id.clone()),
+            })
+            .await
+            .expect("turn node");
+        database
+            .create_mind_edge(&crate::models::CreateMindEdgeInput {
+                project_id: workspace.project.id.clone(),
+                source_id: card_node.id.clone(),
+                target_id: turn_node.id.clone(),
+                relation: "supports".to_owned(),
+            })
+            .await
+            .expect("edge");
+
+        let graph = database
+            .get_mindscape(&workspace.project.id)
+            .await
+            .expect("graph");
+        assert_eq!(graph.nodes.len(), 2);
+        assert_eq!(graph.edges.len(), 1);
+        assert_eq!(graph.sources.len(), 2);
+        assert!(graph
+            .sources
+            .iter()
+            .any(|source| source.turn_id.as_deref() == Some(turn.id.as_str())));
+
+        let other = database.create_project("Other").await.expect("other");
+        assert!(database
+            .create_mind_node(&crate::models::CreateMindNodeInput {
+                project_id: other.project.id,
+                label: "Invalid".to_owned(),
+                description: String::new(),
+                source_card_id: Some(workspace.cards[0].id.clone()),
+                source_turn_id: None,
+            })
+            .await
+            .is_err());
+        sqlx::query("DELETE FROM projects WHERE id=?")
+            .bind(&workspace.project.id)
+            .execute(database.pool())
+            .await
+            .expect("project cascade");
+        let remaining_sources: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM mind_node_sources WHERE mind_node_id IN (?,?)",
+        )
+        .bind(card_node.id)
+        .bind(turn_node.id)
+        .fetch_one(database.pool())
+        .await
+        .expect("remaining sources");
+        assert_eq!(remaining_sources, 0);
     }
 }

@@ -26,6 +26,14 @@ vi.mock("./lib/ipc", () => ({
     import: vi.fn(),
     delete: vi.fn()
   },
+  mindscapeApi: {
+    get: vi.fn().mockResolvedValue({ nodes: [], edges: [], sources: [] }),
+    createNode: vi.fn(),
+    createEdge: vi.fn(),
+    updateNode: vi.fn(),
+    suggest: vi.fn(),
+    applySuggestions: vi.fn()
+  },
   knowledgeApi: {
     search: vi.fn().mockResolvedValue([]),
     toggleFavorite: vi.fn(),
@@ -42,6 +50,9 @@ describe("App", () => {
       error: null,
       documents: [],
       documentCitations: []
+      ,mindscape: { nodes: [], edges: [], sources: [] }
+      ,mindSuggestions: null,
+      suggestingMindscape: false
     });
   });
 

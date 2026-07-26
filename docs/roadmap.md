@@ -5,4 +5,4 @@
 - [x] Phase C — Branching
 - [x] Phase D — Knowledge management
 - [x] Phase E — Documents
-- [ ] Phase F — Mindscape
+- [x] Phase F — Mindscape

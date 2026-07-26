@@ -8,6 +8,7 @@ import remarkGfm from "remark-gfm";
 import { useWorkspaceStore } from "./store/workspace";
 import { ModelSettings } from "./components/ModelSettings";
 import { CardNavigator } from "./components/CardNavigator";
+import { MindscapePanel } from "./components/MindscapePanel";
 import { selectionFromContainer } from "./lib/selection";
 
 export function App() {
@@ -18,7 +19,9 @@ export function App() {
     createCard, selectCard, renameCard, addQuote, removeQuote, editTurn,
     deleteTurn, regenerateTurn, search, searchResults, favoriteTurnIds,
     toggleFavorite, exportProject, importProject, documents, importDocument,
-    deleteDocument, documentCitations
+    deleteDocument, documentCitations, mindscape, addMindNode, addMindEdge,
+    updateMindNode, mindSuggestions, suggestingMindscape, suggestMindscape,
+    applyMindSuggestions, dismissMindSuggestions
   } = useWorkspaceStore();
   const [isCreating, setIsCreating] = useState(false);
   const [title, setTitle] = useState("");
@@ -34,6 +37,7 @@ export function App() {
   const [activeCitation, setActiveCitation] = useState(
     null as (typeof documentCitations)[number] | null
   );
+  const [navigatorMode, setNavigatorMode] = useState<"cards" | "mindscape">("cards");
 
   useEffect(() => {
     void loadProjects();
@@ -75,6 +79,25 @@ export function App() {
       selectedText
     });
     setSelection(null);
+  }
+
+  function addToMindscape(
+    sourceCardId: string,
+    sourceTurnId: string | undefined,
+    suggestedLabel: string,
+    description: string
+  ) {
+    if (!workspace) return;
+    const label = window.prompt("Concept label", suggestedLabel.slice(0, 160));
+    if (!label?.trim()) return;
+    void addMindNode({
+      projectId: workspace.project.id,
+      label: label.trim(),
+      description,
+      sourceCardId,
+      sourceTurnId
+    });
+    setNavigatorMode("mindscape");
   }
 
   return (
@@ -173,11 +196,22 @@ export function App() {
                 <div className="card-kicker">{activeCard?.relation.toUpperCase()} CARD</div>
                 <div className="card-title-row">
                   <h2>{activeCard?.title}</h2>
-                  <button onClick={() => {
-                    if (!activeCard) return;
-                    const title = window.prompt("Card title", activeCard.title);
-                    if (title?.trim()) void renameCard(activeCard.id, title);
-                  }}>Rename</button>
+                  <div>
+                    <button onClick={() => {
+                      if (!activeCard) return;
+                      addToMindscape(
+                        activeCard.id,
+                        undefined,
+                        activeCard.title,
+                        activeCard.summary
+                      );
+                    }}>Add to map</button>
+                    <button onClick={() => {
+                      if (!activeCard) return;
+                      const title = window.prompt("Card title", activeCard.title);
+                      if (title?.trim()) void renameCard(activeCard.id, title);
+                    }}>Rename</button>
+                  </div>
                 </div>
                 {activeCard?.contextStale && <p className="stale-warning">Context changed upstream. Generate again to refresh this branch.</p>}
                 {turns.length === 0 && <div className="empty-card">
@@ -193,6 +227,12 @@ export function App() {
                         if (content?.trim()) void editTurn(turn.id, content);
                       }}>Edit</button>
                       <button onClick={() => void regenerateTurn(turn.id)}>Regenerate</button>
+                      <button onClick={() => addToMindscape(
+                        turn.cardId,
+                        turn.id,
+                        turn.userContent,
+                        turn.assistantContent.slice(0, 800)
+                      )}>Map</button>
                       <button
                         aria-label={favoriteTurnIds.includes(turn.id) ? "Remove favorite" : "Favorite"}
                         className={favoriteTurnIds.includes(turn.id) ? "favorited" : ""}
@@ -274,11 +314,49 @@ export function App() {
                   <button disabled={turns.length === 0} onClick={() => addCard("branch")}><GitBranch size={15} /> Branch</button>
                 </footer>
               </article>
-              <CardNavigator
-                cards={workspace.cards}
-                activeCardId={activeCardId}
-                onSelect={selectCard}
-              />
+              <div className="navigator-stack">
+                <div className="navigator-tabs">
+                  <button className={navigatorMode === "cards" ? "active" : ""} onClick={() => setNavigatorMode("cards")}>Cards</button>
+                  <button className={navigatorMode === "mindscape" ? "active" : ""} onClick={() => setNavigatorMode("mindscape")}>Mindscape</button>
+                </div>
+                {navigatorMode === "cards" ? (
+                  <CardNavigator
+                    cards={workspace.cards}
+                    activeCardId={activeCardId}
+                    onSelect={selectCard}
+                  />
+                ) : (
+                  <MindscapePanel
+                    key={mindSuggestions
+                      ? [...mindSuggestions.concepts, ...mindSuggestions.relations, ...mindSuggestions.merges]
+                        .map((suggestion) => suggestion.id)
+                        .join(":")
+                      : "mindscape"}
+                    graph={mindscape}
+                    onOpenSource={(cardId) => {
+                      selectCard(cardId);
+                      setNavigatorMode("cards");
+                    }}
+                    onConnect={(sourceId, targetId) => {
+                      const relation = window.prompt("Relationship", "relates to");
+                      if (relation?.trim()) {
+                        void addMindEdge({
+                          projectId: workspace.project.id,
+                          sourceId,
+                          targetId,
+                          relation: relation.trim()
+                        });
+                      }
+                    }}
+                    onMove={(...args) => void updateMindNode(...args)}
+                    suggestions={mindSuggestions}
+                    suggesting={suggestingMindscape}
+                    onSuggest={() => activeCard && void suggestMindscape(activeCard.id)}
+                    onApplySuggestions={(acceptedIds) => void applyMindSuggestions(acceptedIds)}
+                    onDismissSuggestions={dismissMindSuggestions}
+                  />
+                )}
+              </div>
             </div>
             {pendingQuotes.length > 0 && (
               <div className="quote-tray">

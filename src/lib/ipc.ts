@@ -9,6 +9,12 @@ import type {
   ModelProfile,
   DocumentImportResult,
   LocalDocument,
+  CreateMindEdgeInput,
+  CreateMindNodeInput,
+  MindEdge,
+  MindNode,
+  MindSuggestionSet,
+  MindscapeGraph,
   Project,
   ProjectWorkspace,
   Quote,
@@ -78,6 +84,45 @@ export const knowledgeApi = {
     invoke<boolean>("toggle_turn_favorite", { projectId, cardId, turnId }),
   favoriteTurnIds: (projectId: string) =>
     invoke<string[]>("favorite_turn_ids", { projectId })
+};
+
+export const mindscapeApi = {
+  get: (projectId: string) =>
+    invoke<MindscapeGraph>("get_mindscape", { projectId }),
+  createNode: (input: CreateMindNodeInput) =>
+    invoke<MindNode>("create_mind_node", { input }),
+  createEdge: (input: CreateMindEdgeInput) =>
+    invoke<MindEdge>("create_mind_edge", { input }),
+  updateNode: (
+    projectId: string,
+    nodeId: string,
+    label: string,
+    description: string,
+    positionX: number,
+    positionY: number
+  ) => invoke<MindNode>("update_mind_node", {
+    projectId,
+    nodeId,
+    label,
+    description,
+    positionX,
+    positionY
+  }),
+  suggest: (
+    projectId: string,
+    sourceCardId: string,
+    modelProfileId: string
+  ) => invoke<MindSuggestionSet>("suggest_mindscape", {
+    projectId,
+    sourceCardId,
+    modelProfileId
+  }),
+  applySuggestions: (
+    suggestions: MindSuggestionSet,
+    acceptedIds: string[]
+  ) => invoke<MindscapeGraph>("apply_mind_suggestions", {
+    input: { suggestions, acceptedIds }
+  })
 };
 
 export type ExportFormat = "json" | "markdown";
