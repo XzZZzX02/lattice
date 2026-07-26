@@ -10,10 +10,12 @@ use uuid::Uuid;
 
 use crate::{
     db::Database,
-    models::{Card, Favorite, Project, ProjectWorkspace, Quote, Turn},
+    models::{
+        Card, Favorite, MindEdge, MindNode, MindNodeSource, Project, ProjectWorkspace, Quote, Turn,
+    },
 };
 
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
 const MAX_IMPORT_BYTES: u64 = 100 * 1024 * 1024;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -26,6 +28,12 @@ struct ProjectBackup {
     turns: Vec<Turn>,
     quotes: Vec<Quote>,
     favorites: Vec<Favorite>,
+    #[serde(default)]
+    mind_nodes: Vec<MindNode>,
+    #[serde(default)]
+    mind_edges: Vec<MindEdge>,
+    #[serde(default)]
+    mind_sources: Vec<MindNodeSource>,
 }
 
 pub async fn export_project(
@@ -77,6 +85,10 @@ async fn collect_backup(database: &Database, project_id: &str) -> Result<Project
     .fetch_all(database.pool())
     .await
     .map_err(|_| "Unable to export favorites".to_owned())?;
+    let mindscape = database
+        .get_mindscape(project_id)
+        .await
+        .map_err(|_| "Unable to export Mindscape".to_owned())?;
     Ok(ProjectBackup {
         schema_version: SCHEMA_VERSION,
         exported_at: Utc::now().to_rfc3339(),
@@ -85,6 +97,9 @@ async fn collect_backup(database: &Database, project_id: &str) -> Result<Project
         turns: workspace.turns,
         quotes,
         favorites,
+        mind_nodes: mindscape.nodes,
+        mind_edges: mindscape.edges,
+        mind_sources: mindscape.sources,
     })
 }
 
@@ -113,7 +128,7 @@ fn validate_import_path(path: &Path) -> Result<(), String> {
 }
 
 fn validate_backup(backup: &ProjectBackup) -> Result<(), String> {
-    if backup.schema_version != SCHEMA_VERSION {
+    if !(1..=SCHEMA_VERSION).contains(&backup.schema_version) {
         return Err(format!(
             "Unsupported backup schema version {}",
             backup.schema_version
@@ -212,6 +227,45 @@ fn validate_backup(backup: &ProjectBackup) -> Result<(), String> {
     {
         return Err("Project backup has invalid favorites".to_owned());
     }
+    let mind_node_ids = backup
+        .mind_nodes
+        .iter()
+        .map(|node| node.id.as_str())
+        .collect::<HashSet<_>>();
+    if mind_node_ids.len() != backup.mind_nodes.len()
+        || backup.mind_nodes.iter().any(|node| {
+            node.project_id != backup.project.id
+                || node.label.trim().is_empty()
+                || node
+                    .source_card_id
+                    .as_deref()
+                    .is_some_and(|id| !card_ids.contains(id))
+                || node
+                    .source_turn_id
+                    .as_deref()
+                    .is_some_and(|id| !turn_ids.contains(id))
+        })
+        || backup.mind_edges.iter().any(|edge| {
+            edge.project_id != backup.project.id
+                || edge.source_id == edge.target_id
+                || !mind_node_ids.contains(edge.source_id.as_str())
+                || !mind_node_ids.contains(edge.target_id.as_str())
+        })
+        || backup.mind_sources.iter().any(|source| {
+            !mind_node_ids.contains(source.mind_node_id.as_str())
+                || (source.card_id.is_none() && source.turn_id.is_none())
+                || source
+                    .card_id
+                    .as_deref()
+                    .is_some_and(|id| !card_ids.contains(id))
+                || source
+                    .turn_id
+                    .as_deref()
+                    .is_some_and(|id| !turn_ids.contains(id))
+        })
+    {
+        return Err("Project backup has an invalid Mindscape".to_owned());
+    }
     Ok(())
 }
 
@@ -229,6 +283,10 @@ async fn insert_backup(
     let turn_map = id_map(backup.turns.iter().map(|turn| turn.id.as_str()), collision);
     let quote_map = id_map(
         backup.quotes.iter().map(|quote| quote.id.as_str()),
+        collision,
+    );
+    let mind_node_map = id_map(
+        backup.mind_nodes.iter().map(|node| node.id.as_str()),
         collision,
     );
     let mut tx = database.pool().begin().await.map_err(db_error)?;
@@ -349,6 +407,71 @@ async fn insert_backup(
         .await
         .map_err(db_error)?;
     }
+    for node in backup.mind_nodes {
+        sqlx::query(
+            "INSERT INTO mind_nodes
+             (id,project_id,label,description,source_card_id,source_turn_id,
+              position_x,position_y,created_at)
+             VALUES (?,?,?,?,?,?,?,?,?)",
+        )
+        .bind(&mind_node_map[node.id.as_str()])
+        .bind(&project_id)
+        .bind(node.label)
+        .bind(node.description)
+        .bind(
+            node.source_card_id
+                .as_deref()
+                .and_then(|id| card_map.get(id)),
+        )
+        .bind(
+            node.source_turn_id
+                .as_deref()
+                .and_then(|id| turn_map.get(id)),
+        )
+        .bind(node.position_x)
+        .bind(node.position_y)
+        .bind(node.created_at)
+        .execute(&mut *tx)
+        .await
+        .map_err(db_error)?;
+    }
+    for edge in backup.mind_edges {
+        sqlx::query(
+            "INSERT INTO mind_edges
+             (id,project_id,source_id,target_id,relation,created_at) VALUES (?,?,?,?,?,?)",
+        )
+        .bind(if collision {
+            Uuid::now_v7().to_string()
+        } else {
+            edge.id
+        })
+        .bind(&project_id)
+        .bind(&mind_node_map[edge.source_id.as_str()])
+        .bind(&mind_node_map[edge.target_id.as_str()])
+        .bind(edge.relation)
+        .bind(edge.created_at)
+        .execute(&mut *tx)
+        .await
+        .map_err(db_error)?;
+    }
+    for source in backup.mind_sources {
+        sqlx::query(
+            "INSERT INTO mind_node_sources
+             (id,mind_node_id,card_id,turn_id,created_at) VALUES (?,?,?,?,?)",
+        )
+        .bind(if collision {
+            Uuid::now_v7().to_string()
+        } else {
+            source.id
+        })
+        .bind(&mind_node_map[source.mind_node_id.as_str()])
+        .bind(source.card_id.as_deref().and_then(|id| card_map.get(id)))
+        .bind(source.turn_id.as_deref().and_then(|id| turn_map.get(id)))
+        .bind(source.created_at)
+        .execute(&mut *tx)
+        .await
+        .map_err(db_error)?;
+    }
     tx.commit().await.map_err(db_error)?;
     database.get_workspace(&project_id).await.map_err(db_error)
 }
@@ -367,6 +490,36 @@ async fn backup_has_collision(database: &Database, backup: &ProjectBackup) -> Re
                 .cards
                 .iter()
                 .map(|card| card.id.clone())
+                .collect::<Vec<_>>(),
+        )
+        .await?
+        || ids_collide(
+            database,
+            "mind_nodes",
+            &backup
+                .mind_nodes
+                .iter()
+                .map(|node| node.id.clone())
+                .collect::<Vec<_>>(),
+        )
+        .await?
+        || ids_collide(
+            database,
+            "mind_edges",
+            &backup
+                .mind_edges
+                .iter()
+                .map(|edge| edge.id.clone())
+                .collect::<Vec<_>>(),
+        )
+        .await?
+        || ids_collide(
+            database,
+            "mind_node_sources",
+            &backup
+                .mind_sources
+                .iter()
+                .map(|source| source.id.clone())
                 .collect::<Vec<_>>(),
         )
         .await?
@@ -507,6 +660,35 @@ mod tests {
     async fn json_round_trip_preserves_ids_in_empty_database_and_remaps_conflicts() {
         let source = Database::in_memory().await.expect("source");
         let workspace = source.create_project("Backup").await.expect("project");
+        let first = source
+            .create_mind_node(&crate::models::CreateMindNodeInput {
+                project_id: workspace.project.id.clone(),
+                label: "First".to_owned(),
+                description: String::new(),
+                source_card_id: Some(workspace.cards[0].id.clone()),
+                source_turn_id: None,
+            })
+            .await
+            .expect("first concept");
+        let second = source
+            .create_mind_node(&crate::models::CreateMindNodeInput {
+                project_id: workspace.project.id.clone(),
+                label: "Second".to_owned(),
+                description: String::new(),
+                source_card_id: Some(workspace.cards[0].id.clone()),
+                source_turn_id: None,
+            })
+            .await
+            .expect("second concept");
+        source
+            .create_mind_edge(&crate::models::CreateMindEdgeInput {
+                project_id: workspace.project.id.clone(),
+                source_id: first.id.clone(),
+                target_id: second.id.clone(),
+                relation: "supports".to_owned(),
+            })
+            .await
+            .expect("edge");
         let directory = tempfile::tempdir().expect("tempdir");
         let path = directory.path().join("backup.json");
         export_project(&source, &workspace.project.id, "json", &path)
@@ -517,11 +699,23 @@ mod tests {
         let imported = import_project(&target, &path).await.expect("import");
         assert_eq!(imported.project.id, workspace.project.id);
         assert_eq!(imported.cards[0].id, workspace.cards[0].id);
+        let imported_graph = target
+            .get_mindscape(&imported.project.id)
+            .await
+            .expect("imported graph");
+        assert_eq!(imported_graph.nodes.len(), 2);
+        assert_eq!(imported_graph.edges.len(), 1);
+        assert_eq!(imported_graph.sources.len(), 2);
 
         let duplicate = import_project(&target, &path).await.expect("duplicate");
         assert_ne!(duplicate.project.id, workspace.project.id);
         assert_ne!(duplicate.cards[0].id, workspace.cards[0].id);
         assert!(duplicate.project.title.ends_with("(imported)"));
+        let duplicate_graph = target
+            .get_mindscape(&duplicate.project.id)
+            .await
+            .expect("duplicate graph");
+        assert_ne!(duplicate_graph.nodes[0].id, first.id);
     }
 
     #[tokio::test]
@@ -561,6 +755,9 @@ mod tests {
             turns: Vec::new(),
             quotes: Vec::new(),
             favorites: Vec::new(),
+            mind_nodes: Vec::new(),
+            mind_edges: Vec::new(),
+            mind_sources: Vec::new(),
         };
         std::fs::write(&path, serde_json::to_string(&damaged).expect("serialize")).expect("write");
 
