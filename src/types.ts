@@ -172,3 +172,53 @@ export interface DocumentCitation {
   createdAt: string;
   available: boolean;
 }
+
+export interface MindNode {
+  id: string;
+  projectId: string;
+  label: string;
+  description: string;
+  sourceCardId: string | null;
+  sourceTurnId: string | null;
+  positionX: number;
+  positionY: number;
+  createdAt: string;
+}
+
+export interface MindEdge {
+  id: string;
+  projectId: string;
+  sourceId: string;
+  targetId: string;
+  relation: string;
+  createdAt: string;
+}
+
+export interface MindNodeSource {
+  id: string;
+  mindNodeId: string;
+  cardId: string | null;
+  turnId: string | null;
+  createdAt: string;
+}
+
+export interface MindscapeGraph {
+  nodes: MindNode[];
+  edges: MindEdge[];
+  sources: MindNodeSource[];
+}
+
+export interface CreateMindNodeInput {
+  projectId: string;
+  label: string;
+  description: string;
+  sourceCardId?: string;
+  sourceTurnId?: string;
+}
+
+export interface CreateMindEdgeInput {
+  projectId: string;
+  sourceId: string;
+  targetId: string;
+  relation: string;
+}

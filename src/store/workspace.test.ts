@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  cardApi, chatApi, documentApi, fileApi, knowledgeApi, modelApi, quoteApi,
-  turnApi, workspaceApi
+  cardApi, chatApi, documentApi, fileApi, knowledgeApi, mindscapeApi, modelApi,
+  quoteApi, turnApi, workspaceApi
 } from "../lib/ipc";
 import type { ProjectWorkspace } from "../types";
 import { useWorkspaceStore } from "./workspace";
@@ -23,6 +23,12 @@ vi.mock("../lib/ipc", () => ({
     citations: vi.fn().mockResolvedValue([]),
     import: vi.fn(),
     delete: vi.fn()
+  },
+  mindscapeApi: {
+    get: vi.fn().mockResolvedValue({ nodes: [], edges: [], sources: [] }),
+    createNode: vi.fn(),
+    createEdge: vi.fn(),
+    updateNode: vi.fn()
   },
   knowledgeApi: {
     search: vi.fn(),
@@ -80,6 +86,7 @@ describe("workspace store", () => {
       searchResults: []
       ,documents: []
       ,documentCitations: []
+      ,mindscape: { nodes: [], edges: [], sources: [] }
     });
   });
 
@@ -308,6 +315,50 @@ describe("workspace store", () => {
     vi.mocked(documentApi.delete).mockResolvedValue();
     await useWorkspaceStore.getState().deleteDocument("d1");
     expect(useWorkspaceStore.getState().documents).toEqual([]);
+  });
+
+  it("adds traceable nodes and edges to Mindscape", async () => {
+    useWorkspaceStore.setState({ workspace });
+    const node = {
+      id: "n1",
+      projectId: "project-1",
+      label: "Concept",
+      description: "Traceable",
+      sourceCardId: "card-1",
+      sourceTurnId: null,
+      positionX: 0,
+      positionY: 0,
+      createdAt: ""
+    };
+    vi.mocked(mindscapeApi.createNode).mockResolvedValue(node);
+    vi.mocked(mindscapeApi.get).mockResolvedValue({
+      nodes: [node],
+      edges: [],
+      sources: []
+    });
+    await useWorkspaceStore.getState().addMindNode({
+      projectId: "project-1",
+      label: "Concept",
+      description: "Traceable",
+      sourceCardId: "card-1"
+    });
+    expect(useWorkspaceStore.getState().mindscape.nodes).toEqual([node]);
+
+    vi.mocked(mindscapeApi.createEdge).mockResolvedValue({
+      id: "e1",
+      projectId: "project-1",
+      sourceId: "n1",
+      targetId: "n2",
+      relation: "supports",
+      createdAt: ""
+    });
+    await useWorkspaceStore.getState().addMindEdge({
+      projectId: "project-1",
+      sourceId: "n1",
+      targetId: "n2",
+      relation: "supports"
+    });
+    expect(mindscapeApi.createEdge).toHaveBeenCalled();
   });
 
   it("creates and prepends a project", async () => {

@@ -1,12 +1,13 @@
 import { create } from "zustand";
 import {
-  cardApi, chatApi, documentApi, fileApi, knowledgeApi, modelApi, quoteApi,
-  turnApi, workspaceApi
+  cardApi, chatApi, documentApi, fileApi, knowledgeApi, mindscapeApi, modelApi,
+  quoteApi, turnApi, workspaceApi
 } from "../lib/ipc";
 import type { ExportFormat } from "../lib/ipc";
 import type {
-  CreateCardInput, CreateQuoteInput, DocumentCitation, LocalDocument,
-  ModelProfile, Project, ProjectWorkspace, Quote, SearchResult, StreamEvent, Turn
+  CreateCardInput, CreateMindEdgeInput, CreateMindNodeInput, CreateQuoteInput,
+  DocumentCitation, LocalDocument, MindscapeGraph, ModelProfile, Project,
+  ProjectWorkspace, Quote, SearchResult, StreamEvent, Turn
 } from "../types";
 
 interface WorkspaceState {
@@ -23,6 +24,7 @@ interface WorkspaceState {
   searchResults: SearchResult[];
   documents: LocalDocument[];
   documentCitations: DocumentCitation[];
+  mindscape: MindscapeGraph;
   loadProjects: () => Promise<void>;
   createProject: (title: string) => Promise<void>;
   selectProject: (projectId: string) => Promise<void>;
@@ -44,6 +46,15 @@ interface WorkspaceState {
   importProject: () => Promise<boolean>;
   importDocument: () => Promise<boolean>;
   deleteDocument: (documentId: string) => Promise<void>;
+  addMindNode: (input: CreateMindNodeInput) => Promise<void>;
+  addMindEdge: (input: CreateMindEdgeInput) => Promise<void>;
+  updateMindNode: (
+    nodeId: string,
+    label: string,
+    description: string,
+    positionX: number,
+    positionY: number
+  ) => Promise<void>;
 }
 
 function errorMessage(error: unknown): string {
@@ -64,6 +75,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   searchResults: [],
   documents: [],
   documentCitations: [],
+  mindscape: { nodes: [], edges: [], sources: [] },
   loadProjects: async () => {
     set({ loading: true, error: null });
     try {
@@ -85,6 +97,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         activeCardId: workspace.project.rootCardId,
         documents: [],
         documentCitations: [],
+        mindscape: { nodes: [], edges: [], sources: [] },
         projects: [workspace.project, ...state.projects],
         loading: false
       }));
@@ -99,11 +112,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const favoriteTurnIds = await knowledgeApi.favoriteTurnIds(projectId);
       const documents = await documentApi.list(projectId);
       const documentCitations = await documentApi.citations(projectId);
+      const mindscape = await mindscapeApi.get(projectId);
       set({
         workspace,
         favoriteTurnIds,
         documents,
         documentCitations,
+        mindscape,
         activeCardId: workspace.project.rootCardId,
         loading: false
       });
@@ -291,11 +306,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       );
       const documents = await documentApi.list(workspace.project.id);
       const documentCitations = await documentApi.citations(workspace.project.id);
+      const mindscape = await mindscapeApi.get(workspace.project.id);
       set((state) => ({
         workspace,
         favoriteTurnIds,
         documents,
         documentCitations,
+        mindscape,
         activeCardId: workspace.project.rootCardId,
         projects: [
           workspace.project,
@@ -339,6 +356,54 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           (document) => document.id !== documentId
         ),
         documentCitations
+      }));
+    } catch (error) {
+      set({ error: errorMessage(error) });
+    }
+  },
+  addMindNode: async (input) => {
+    try {
+      await mindscapeApi.createNode(input);
+      const mindscape = await mindscapeApi.get(input.projectId);
+      set({ mindscape });
+    } catch (error) {
+      set({ error: errorMessage(error) });
+    }
+  },
+  addMindEdge: async (input) => {
+    try {
+      await mindscapeApi.createEdge(input);
+      const mindscape = await mindscapeApi.get(input.projectId);
+      set({ mindscape });
+    } catch (error) {
+      set({ error: errorMessage(error) });
+    }
+  },
+  updateMindNode: async (
+    nodeId,
+    label,
+    description,
+    positionX,
+    positionY
+  ) => {
+    const projectId = get().workspace?.project.id;
+    if (!projectId) return;
+    try {
+      const node = await mindscapeApi.updateNode(
+        projectId,
+        nodeId,
+        label,
+        description,
+        positionX,
+        positionY
+      );
+      set((state) => ({
+        mindscape: {
+          ...state.mindscape,
+          nodes: state.mindscape.nodes.map((current) =>
+            current.id === node.id ? node : current
+          )
+        }
       }));
     } catch (error) {
       set({ error: errorMessage(error) });

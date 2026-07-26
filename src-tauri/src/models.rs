@@ -241,3 +241,65 @@ pub struct DocumentCitation {
     pub created_at: String,
     pub available: bool,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MindNode {
+    pub id: String,
+    pub project_id: String,
+    pub label: String,
+    pub description: String,
+    pub source_card_id: Option<String>,
+    pub source_turn_id: Option<String>,
+    pub position_x: f64,
+    pub position_y: f64,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MindEdge {
+    pub id: String,
+    pub project_id: String,
+    pub source_id: String,
+    pub target_id: String,
+    pub relation: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MindNodeSource {
+    pub id: String,
+    pub mind_node_id: String,
+    pub card_id: Option<String>,
+    pub turn_id: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MindscapeGraph {
+    pub nodes: Vec<MindNode>,
+    pub edges: Vec<MindEdge>,
+    pub sources: Vec<MindNodeSource>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateMindNodeInput {
+    pub project_id: String,
+    pub label: String,
+    pub description: String,
+    pub source_card_id: Option<String>,
+    pub source_turn_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateMindEdgeInput {
+    pub project_id: String,
+    pub source_id: String,
+    pub target_id: String,
+    pub relation: String,
+}
