@@ -19,8 +19,9 @@ must survive restarts and project backup. Keeping the two concepts separate
 avoids changing context-builder behavior.
 
 Rendered UTF-16 offsets match browser Selection offsets and remain stable across
-Markdown syntax such as emphasis. The selected text is retained as a validation
-and fallback snapshot.
+Markdown syntax such as emphasis. Quotes use the same rendered coordinate
+system, so a selection that crosses Markdown elements can still be added to the
+composer. The selected text is retained as a validation and fallback snapshot.
 
 ## Consequences
 

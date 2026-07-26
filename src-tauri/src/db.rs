@@ -256,12 +256,13 @@ impl Database {
 
     pub async fn create_quote(&self, input: &CreateQuoteInput) -> Result<Quote, sqlx::Error> {
         let source = self.get_turn(&input.turn_id).await?;
-        if !utf16_slice_matches(
-            &source.assistant_content,
-            input.start_offset,
-            input.end_offset,
-            &input.selected_text,
-        ) {
+        let selected_length = input.selected_text.encode_utf16().count() as i64;
+        let source_length = source.assistant_content.encode_utf16().count() as i64;
+        if input.start_offset < 0
+            || selected_length == 0
+            || input.end_offset - input.start_offset != selected_length
+            || input.end_offset > source_length
+        {
             return Err(sqlx::Error::RowNotFound);
         }
         let id = Uuid::now_v7().to_string();
@@ -393,6 +394,23 @@ impl Database {
         .bind(&input.source_turn_id)
         .fetch_one(&mut *tx)
         .await?;
+        let source_content: String =
+            sqlx::query_scalar("SELECT assistant_content FROM turns WHERE id = ? AND card_id = ?")
+                .bind(&input.source_turn_id)
+                .bind(&source.id)
+                .fetch_one(&mut *tx)
+                .await?;
+        let selected_length = i64::try_from(input.selected_text.encode_utf16().count())
+            .map_err(|_| sqlx::Error::RowNotFound)?;
+        let source_length = i64::try_from(source_content.encode_utf16().count())
+            .map_err(|_| sqlx::Error::RowNotFound)?;
+        if input.start_offset < 0
+            || selected_length == 0
+            || input.end_offset.checked_sub(input.start_offset) != Some(selected_length)
+            || input.end_offset > source_length
+        {
+            return Err(sqlx::Error::RowNotFound);
+        }
         sqlx::query(
             "INSERT INTO cards
              (id,project_id,parent_id,relation,title,summary,unread,
@@ -1174,16 +1192,6 @@ fn document_fts_query(query: &str) -> String {
         .join(" OR ")
 }
 
-fn utf16_slice_matches(content: &str, start: i64, end: i64, selected: &str) -> bool {
-    let (Ok(start), Ok(end)) = (usize::try_from(start), usize::try_from(end)) else {
-        return false;
-    };
-    let content = content.encode_utf16().collect::<Vec<_>>();
-    content
-        .get(start..end)
-        .is_some_and(|slice| slice == selected.encode_utf16().collect::<Vec<_>>())
-}
-
 async fn archive_turn_revision(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     turn: &Turn,
@@ -1497,12 +1505,27 @@ mod tests {
         assert!(database
             .create_quote(&crate::models::CreateQuoteInput {
                 turn_id: source.id.clone(),
-                selected_text: "wrong".to_owned(),
+                selected_text: "wrong!".to_owned(),
                 start_offset: 4,
                 end_offset: 9,
             })
             .await
             .is_err());
+
+        database
+            .update_turn(&source.id, "Alpha **beta** gamma", "completed", None)
+            .await
+            .expect("formatted answer");
+        let formatted_quote = database
+            .create_quote(&crate::models::CreateQuoteInput {
+                turn_id: source.id.clone(),
+                selected_text: "Alpha beta".to_owned(),
+                start_offset: 0,
+                end_offset: 10,
+            })
+            .await
+            .expect("rendered quote");
+        assert_eq!(formatted_quote.selected_text, "Alpha beta");
 
         let second_quote = database
             .create_quote(&crate::models::CreateQuoteInput {
@@ -1564,6 +1587,14 @@ mod tests {
             .await
             .expect("workspace");
         assert_eq!(loaded.selection_card_links, vec![created.link]);
+
+        let mut invalid_range = input.clone();
+        invalid_range.start_offset = 100;
+        invalid_range.end_offset = 104;
+        assert!(database
+            .create_card_from_selection(&invalid_range)
+            .await
+            .is_err());
 
         assert!(database.create_card_from_selection(&input).await.is_err());
         let after_duplicate = database

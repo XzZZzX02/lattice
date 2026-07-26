@@ -236,6 +236,83 @@ describe("workspace store", () => {
     expect(useWorkspaceStore.getState().activeCardId).toBeNull();
   });
 
+  it("does not append a selection card after the user switches projects", async () => {
+    const otherWorkspace: ProjectWorkspace = {
+      ...workspace,
+      project: { ...workspace.project, id: "project-2", rootCardId: "other-card" },
+      cards: [{ ...workspace.cards[0], id: "other-card", projectId: "project-2" }],
+      selectionCardLinks: []
+    };
+    const child = {
+      ...workspace.cards[0],
+      id: "card-2",
+      parentId: "card-1",
+      relation: "child" as const,
+      title: "selected"
+    };
+    const link = {
+      id: "link-1",
+      sourceTurnId: "turn-1",
+      targetCardId: "card-2",
+      selectedText: "selected",
+      startOffset: 4,
+      endOffset: 12,
+      createdAt: ""
+    };
+    useWorkspaceStore.setState({ workspace, activeCardId: "card-1" });
+    vi.mocked(cardApi.createFromSelection).mockImplementation(async () => {
+      useWorkspaceStore.setState({
+        workspace: otherWorkspace,
+        activeCardId: "other-card"
+      });
+      return { card: child, link };
+    });
+
+    await useWorkspaceStore.getState().createCardFromSelection({
+      projectId: "project-1",
+      sourceCardId: "card-1",
+      sourceTurnId: "turn-1",
+      title: "selected",
+      selectedText: "selected",
+      startOffset: 4,
+      endOffset: 12
+    });
+
+    expect(useWorkspaceStore.getState().activeCardId).toBe("other-card");
+    expect(useWorkspaceStore.getState().workspace).toEqual(otherWorkspace);
+  });
+
+  it("does not surface an old project's selection error after switching", async () => {
+    const otherWorkspace: ProjectWorkspace = {
+      ...workspace,
+      project: { ...workspace.project, id: "project-2", rootCardId: "other-card" },
+      cards: [{ ...workspace.cards[0], id: "other-card", projectId: "project-2" }],
+      selectionCardLinks: []
+    };
+    useWorkspaceStore.setState({ workspace, activeCardId: "card-1" });
+    vi.mocked(cardApi.createFromSelection).mockImplementation(async () => {
+      useWorkspaceStore.setState({
+        workspace: otherWorkspace,
+        activeCardId: "other-card"
+      });
+      throw new Error("Old project failed");
+    });
+
+    await useWorkspaceStore.getState().createCardFromSelection({
+      projectId: "project-1",
+      sourceCardId: "card-1",
+      sourceTurnId: "turn-1",
+      title: "selected",
+      selectedText: "selected",
+      startOffset: 4,
+      endOffset: 12
+    });
+
+    expect(useWorkspaceStore.getState().workspace).toEqual(otherWorkspace);
+    expect(useWorkspaceStore.getState().activeCardId).toBe("other-card");
+    expect(useWorkspaceStore.getState().error).toBeNull();
+  });
+
   it("adds and removes a traceable quote", async () => {
     const quote = {
       id: "q1",

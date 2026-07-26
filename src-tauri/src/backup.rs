@@ -250,15 +250,11 @@ fn validate_backup(backup: &ProjectBackup) -> Result<(), String> {
             let source = backup.turns.iter().find(|turn| turn.id == quote.turn_id);
             quote.selected_text.is_empty()
                 || quote.start_offset < 0
-                || quote.end_offset <= quote.start_offset
+                || quote.end_offset - quote.start_offset
+                    != quote.selected_text.encode_utf16().count() as i64
                 || !turn_ids.contains(quote.turn_id.as_str())
                 || source.is_none_or(|turn| {
-                    !utf16_slice_matches(
-                        &turn.assistant_content,
-                        quote.start_offset,
-                        quote.end_offset,
-                        &quote.selected_text,
-                    )
+                    quote.end_offset > turn.assistant_content.encode_utf16().count() as i64
                 })
                 || quote
                     .target_turn_id
@@ -287,12 +283,27 @@ fn validate_backup(backup: &ProjectBackup) -> Result<(), String> {
     if selection_link_ids.len() != backup.selection_card_links.len()
         || selection_ranges.len() != backup.selection_card_links.len()
         || backup.selection_card_links.iter().any(|link| {
+            let source = backup
+                .turns
+                .iter()
+                .find(|turn| turn.id == link.source_turn_id);
+            let target = backup
+                .cards
+                .iter()
+                .find(|card| card.id == link.target_card_id);
             link.selected_text.is_empty()
                 || link.start_offset < 0
                 || link.end_offset - link.start_offset
                     != link.selected_text.encode_utf16().count() as i64
                 || !turn_ids.contains(link.source_turn_id.as_str())
                 || !card_ids.contains(link.target_card_id.as_str())
+                || source.is_none_or(|turn| {
+                    link.end_offset > turn.assistant_content.encode_utf16().count() as i64
+                        || target.is_none_or(|card| {
+                            card.relation != "child"
+                                || card.parent_id.as_deref() != Some(turn.card_id.as_str())
+                        })
+                })
         })
     {
         return Err("Project backup has invalid selection card links".to_owned());
@@ -909,17 +920,6 @@ fn parent_first_cards(cards: Vec<Card>) -> Result<Vec<Card>, String> {
     Ok(ordered)
 }
 
-fn utf16_slice_matches(content: &str, start: i64, end: i64, selected: &str) -> bool {
-    let (Ok(start), Ok(end)) = (usize::try_from(start), usize::try_from(end)) else {
-        return false;
-    };
-    content
-        .encode_utf16()
-        .collect::<Vec<_>>()
-        .get(start..end)
-        .is_some_and(|slice| slice == selected.encode_utf16().collect::<Vec<_>>())
-}
-
 fn id_map<'a>(ids: impl Iterator<Item = &'a str>, remap: bool) -> HashMap<String, String> {
     ids.map(|id| {
         (
@@ -954,7 +954,10 @@ fn db_error(_: impl std::fmt::Display) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{export_project, import_project, ProjectBackup, SCHEMA_VERSION};
+    use super::{
+        collect_backup, export_project, import_project, validate_backup, ProjectBackup,
+        SCHEMA_VERSION,
+    };
     use crate::{db::Database, documents::DocumentStore};
     use chrono::Utc;
 
@@ -1013,6 +1016,10 @@ mod tests {
             )
             .await
             .expect("cited turn");
+        source
+            .update_turn(&cited_turn.id, "Use the evidence", "completed", None)
+            .await
+            .expect("complete cited turn");
         let selection = source
             .create_card_from_selection(&crate::models::CreateSelectionCardInput {
                 project_id: workspace.project.id.clone(),
@@ -1110,6 +1117,38 @@ mod tests {
         assert!(content.contains("# Readable"));
         assert!(content.contains("Question"));
         assert!(content.contains("Answer"));
+    }
+
+    #[tokio::test]
+    async fn rejects_selection_links_to_cards_unrelated_to_the_source_turn() {
+        let database = Database::in_memory().await.expect("database");
+        let workspace = database.create_project("Links").await.expect("project");
+        let source = database
+            .create_streaming_turn(&workspace.cards[0].id, "Question", "model", "link-source")
+            .await
+            .expect("source turn");
+        database
+            .update_turn(&source.id, "Alpha beta", "completed", None)
+            .await
+            .expect("answer");
+        database
+            .create_card_from_selection(&crate::models::CreateSelectionCardInput {
+                project_id: workspace.project.id.clone(),
+                source_card_id: workspace.cards[0].id.clone(),
+                source_turn_id: source.id,
+                title: "beta".to_owned(),
+                selected_text: "beta".to_owned(),
+                start_offset: 6,
+                end_offset: 10,
+            })
+            .await
+            .expect("selection card");
+        let mut backup = collect_backup(&database, &workspace.project.id)
+            .await
+            .expect("backup");
+        backup.selection_card_links[0].target_card_id = workspace.cards[0].id.clone();
+
+        assert!(validate_backup(&backup).is_err());
     }
 
     #[tokio::test]

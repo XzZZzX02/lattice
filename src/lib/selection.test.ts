@@ -32,12 +32,36 @@ describe("resolveSourceSelection", () => {
 
     expect(selectionFromContainer(container, "**term** then term", selection)).toEqual({
       text: "term",
-      startOffset: 14,
-      endOffset: 18,
+      startOffset: 10,
+      endOffset: 14,
       renderedStartOffset: 10,
       renderedEndOffset: 14
     });
     expect(selectionFromContainer(container, "answer", null)).toBeNull();
+    container.remove();
+  });
+
+  it("keeps a selection that crosses Markdown formatting boundaries", () => {
+    const container = document.createElement("div");
+    const prefix = document.createTextNode("Alpha ");
+    const strong = document.createElement("strong");
+    strong.textContent = "beta";
+    container.append(prefix, strong);
+    document.body.append(container);
+    const range = document.createRange();
+    range.setStart(prefix, 0);
+    range.setEnd(strong.firstChild!, 4);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    expect(selectionFromContainer(container, "Alpha **beta**", selection)).toEqual({
+      text: "Alpha beta",
+      startOffset: 0,
+      endOffset: 10,
+      renderedStartOffset: 0,
+      renderedEndOffset: 10
+    });
     container.remove();
   });
 });

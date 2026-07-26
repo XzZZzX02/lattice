@@ -203,7 +203,7 @@ pub async fn create_card_from_selection(
         || selected_length == 0
         || selected_length > 8_000
         || input.start_offset < 0
-        || input.end_offset - input.start_offset != selected_length
+        || input.end_offset.checked_sub(input.start_offset) != Some(selected_length)
     {
         return Err("Selected card excerpt is invalid".to_owned());
     }
@@ -227,11 +227,11 @@ pub async fn create_quote(
     database: State<'_, Database>,
     input: CreateQuoteInput,
 ) -> Result<Quote, String> {
-    let length = input.selected_text.chars().count();
-    if length == 0
-        || length > 8_000
+    let selected_length = input.selected_text.encode_utf16().count() as i64;
+    if selected_length == 0
+        || selected_length > 8_000
         || input.start_offset < 0
-        || input.end_offset <= input.start_offset
+        || input.end_offset.checked_sub(input.start_offset) != Some(selected_length)
     {
         return Err("Selected quote is invalid".to_owned());
     }

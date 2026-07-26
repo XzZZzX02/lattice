@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { positionFloatingToolbar } from "../lib/floating";
@@ -63,6 +63,23 @@ describe("SelectionToolbar", () => {
 
     expect(screen.getByRole("button", { name: "Create card from selection" })).toBeDisabled();
     await user.keyboard("{Escape}");
+    expect(onDismiss).toHaveBeenCalledOnce();
+  });
+
+  it("closes when the next pointer interaction is outside the toolbar", async () => {
+    const onDismiss = vi.fn();
+    render(
+      <SelectionToolbar
+        anchor={{ left: 20, right: 40, top: 20, bottom: 40 }}
+        canCreateCard
+        onCopy={vi.fn()}
+        onCreateCard={vi.fn()}
+        onDismiss={onDismiss}
+        onQuote={vi.fn()}
+      />
+    );
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    fireEvent.pointerDown(document.body);
     expect(onDismiss).toHaveBeenCalledOnce();
   });
 });

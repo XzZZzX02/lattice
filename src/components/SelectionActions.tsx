@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Copy, PanelsTopLeft, TextQuote, X } from "lucide-react";
 import {
   positionFloatingToolbar,
@@ -21,6 +21,7 @@ export function SelectionToolbar({
   onDismiss: () => void;
   onQuote: () => void;
 }) {
+  const toolbarRef = useRef<HTMLDivElement>(null);
   const position = positionFloatingToolbar(
     anchor,
     { width: window.innerWidth, height: window.innerHeight }
@@ -33,18 +34,27 @@ export function SelectionToolbar({
     function handleViewportChange() {
       onDismiss();
     }
+    function handlePointerDown(event: PointerEvent) {
+      if (!toolbarRef.current?.contains(event.target as Node)) onDismiss();
+    }
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("resize", handleViewportChange);
     window.addEventListener("scroll", handleViewportChange, true);
+    const outsideListener = window.setTimeout(() => {
+      window.addEventListener("pointerdown", handlePointerDown);
+    }, 0);
     return () => {
+      window.clearTimeout(outsideListener);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("resize", handleViewportChange);
       window.removeEventListener("scroll", handleViewportChange, true);
+      window.removeEventListener("pointerdown", handlePointerDown);
     };
   }, [onDismiss]);
 
   return (
     <div
+      ref={toolbarRef}
       className="selection-toolbar"
       role="toolbar"
       aria-label="Selected text actions"

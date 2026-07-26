@@ -289,6 +289,7 @@ export function App() {
                     <div
                       className={`message assistant ${turn.status}`}
                       onMouseUp={(event) => {
+                        if (!turn.assistantContent) return;
                         const browserSelection = window.getSelection();
                         const selected = selectionFromContainer(
                           event.currentTarget,

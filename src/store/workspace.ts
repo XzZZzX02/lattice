@@ -216,22 +216,27 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
   createCardFromSelection: async (input) => {
-    if (!get().workspace) return;
+    if (get().workspace?.project.id !== input.projectId) return;
     try {
       const created = await cardApi.createFromSelection(input);
-      set((state) => ({
-        activeCardId: created.card.id,
-        workspace: state.workspace && {
-          ...state.workspace,
-          cards: [...state.workspace.cards, created.card],
-          selectionCardLinks: [
-            ...state.workspace.selectionCardLinks,
-            created.link
-          ]
-        }
-      }));
+      set((state) => {
+        if (state.workspace?.project.id !== input.projectId) return {};
+        return {
+          activeCardId: created.card.id,
+          workspace: {
+            ...state.workspace,
+            cards: [...state.workspace.cards, created.card],
+            selectionCardLinks: [
+              ...state.workspace.selectionCardLinks,
+              created.link
+            ]
+          }
+        };
+      });
     } catch (error) {
-      set({ error: errorMessage(error) });
+      if (get().workspace?.project.id === input.projectId) {
+        set({ error: errorMessage(error) });
+      }
     }
   },
   renameCard: async (cardId, title) => {

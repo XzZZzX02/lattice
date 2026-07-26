@@ -30,7 +30,7 @@ export function resolveSourceSelection(
 
 export function selectionFromContainer(
   container: HTMLElement,
-  source: string,
+  _source: string,
   selection: Selection | null
 ): RenderedSelection | null {
   if (!selection || selection.rangeCount !== 1 || !selection.anchorNode) return null;
@@ -40,18 +40,16 @@ export function selectionFromContainer(
   prefixRange.selectNodeContents(container);
   prefixRange.setEnd(range.startContainer, range.startOffset);
   const renderedSelection = selection.toString();
+  const text = renderedSelection.trim();
+  if (!text) return null;
   const leadingWhitespace = renderedSelection.length - renderedSelection.trimStart().length;
-  const sourceSelection = resolveSourceSelection(
-    source,
-    prefixRange.toString(),
-    renderedSelection
-  );
-  if (!sourceSelection) return null;
   const renderedStartOffset = prefixRange.toString().length + leadingWhitespace;
   return {
-    ...sourceSelection,
+    text,
+    startOffset: renderedStartOffset,
+    endOffset: renderedStartOffset + text.length,
     renderedStartOffset,
-    renderedEndOffset: renderedStartOffset + sourceSelection.text.length
+    renderedEndOffset: renderedStartOffset + text.length
   };
 }
 
