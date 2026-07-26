@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { cardApi, chatApi, modelApi, quoteApi, workspaceApi } from "../lib/ipc";
+import {
+  cardApi, chatApi, modelApi, quoteApi, turnApi, workspaceApi
+} from "../lib/ipc";
 import type { ProjectWorkspace } from "../types";
 import { useWorkspaceStore } from "./workspace";
 
@@ -12,7 +14,8 @@ vi.mock("../lib/ipc", () => ({
   modelApi: { list: vi.fn() },
   chatApi: { send: vi.fn(), cancel: vi.fn() },
   cardApi: { create: vi.fn(), rename: vi.fn() },
-  quoteApi: { create: vi.fn() }
+  quoteApi: { create: vi.fn() },
+  turnApi: { edit: vi.fn(), delete: vi.fn(), regenerate: vi.fn() }
 }));
 
 const workspace: ProjectWorkspace = {
@@ -155,6 +158,45 @@ describe("workspace store", () => {
 
     useWorkspaceStore.getState().removeQuote("q1");
     expect(useWorkspaceStore.getState().pendingQuotes).toEqual([]);
+  });
+
+  it("edits, deletes, and regenerates without overwriting the source", async () => {
+    const sourceTurn = {
+      id: "t1", cardId: "card-1", userContent: "source",
+      assistantContent: "answer", modelProfileId: "m1", status: "completed" as const,
+      errorMessage: null, requestId: null, createdAt: "", updatedAt: ""
+    };
+    const withTurn = { ...workspace, turns: [sourceTurn] };
+    useWorkspaceStore.setState({
+      workspace: withTurn,
+      activeModelProfileId: "m1"
+    });
+    vi.mocked(turnApi.edit).mockResolvedValue({
+      ...withTurn,
+      turns: [{ ...sourceTurn, userContent: "edited", assistantContent: "", status: "idle" }]
+    });
+    await useWorkspaceStore.getState().editTurn("t1", "edited");
+    expect(useWorkspaceStore.getState().workspace?.turns[0].userContent).toBe("edited");
+
+    vi.mocked(turnApi.delete).mockResolvedValue({ ...workspace, turns: [] });
+    await useWorkspaceStore.getState().deleteTurn("t1");
+    expect(useWorkspaceStore.getState().workspace?.turns).toEqual([]);
+
+    const branch = {
+      ...workspace.cards[0],
+      id: "branch",
+      parentId: "card-1",
+      relation: "branch" as const,
+      branchFromTurnId: "t1"
+    };
+    vi.mocked(turnApi.regenerate).mockResolvedValue({ card: branch, sourceTurn });
+    vi.mocked(chatApi.send).mockResolvedValue(sourceTurn);
+    await useWorkspaceStore.getState().regenerateTurn("t1");
+    expect(useWorkspaceStore.getState().activeCardId).toBe("branch");
+    expect(chatApi.send).toHaveBeenCalledWith(
+      expect.objectContaining({ cardId: "branch", content: "source" }),
+      expect.any(Function)
+    );
   });
 
   it("loads and selects the most recent project", async () => {

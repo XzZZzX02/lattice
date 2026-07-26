@@ -5,7 +5,7 @@ use crate::{
     db::Database,
     models::{
         Card, CreateCardInput, CreateQuoteInput, ModelProfile, Project, ProjectWorkspace, Quote,
-        SaveModelProfileInput, SendMessageInput, StreamEvent, Turn,
+        RegeneratedTurn, SaveModelProfileInput, SendMessageInput, StreamEvent, Turn,
     },
     models_service,
 };
@@ -55,6 +55,45 @@ pub async fn create_quote(
         .create_quote(&input)
         .await
         .map_err(|_| "Unable to save selected quote".to_owned())
+}
+
+#[tauri::command]
+pub async fn edit_turn(
+    database: State<'_, Database>,
+    turn_id: String,
+    user_content: String,
+) -> Result<ProjectWorkspace, String> {
+    let content = user_content.trim();
+    if content.is_empty() || content.chars().count() > 32_000 {
+        return Err("Message must contain 1–32,000 characters".to_owned());
+    }
+    database
+        .edit_turn(&turn_id, content)
+        .await
+        .map_err(|_| "Unable to edit message".to_owned())
+}
+
+#[tauri::command]
+pub async fn delete_turn(
+    database: State<'_, Database>,
+    turn_id: String,
+) -> Result<ProjectWorkspace, String> {
+    database
+        .delete_turn(&turn_id)
+        .await
+        .map_err(|_| "Unable to delete message".to_owned())
+}
+
+#[tauri::command]
+pub async fn regenerate_turn(
+    database: State<'_, Database>,
+    turn_id: String,
+) -> Result<RegeneratedTurn, String> {
+    let (card, source_turn) = database
+        .regenerate_turn(&turn_id)
+        .await
+        .map_err(|_| "Unable to create regeneration branch".to_owned())?;
+    Ok(RegeneratedTurn { card, source_turn })
 }
 
 #[tauri::command]

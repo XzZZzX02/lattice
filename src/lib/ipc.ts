@@ -11,6 +11,7 @@ import type {
   StreamEvent,
   Turn,
   Quote
+  ,RegeneratedTurn
 } from "../types";
 
 export const workspaceApi = {
@@ -53,4 +54,13 @@ export const cardApi = {
 export const quoteApi = {
   create: (input: CreateQuoteInput) =>
     invoke<Quote>("create_quote", { input })
+};
+
+export const turnApi = {
+  edit: (turnId: string, userContent: string) =>
+    invoke<ProjectWorkspace>("edit_turn", { turnId, userContent }),
+  delete: (turnId: string) =>
+    invoke<ProjectWorkspace>("delete_turn", { turnId }),
+  regenerate: (turnId: string) =>
+    invoke<RegeneratedTurn>("regenerate_turn", { turnId })
 };

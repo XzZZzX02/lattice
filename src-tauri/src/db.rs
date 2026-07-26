@@ -393,6 +393,99 @@ impl Database {
         tx.commit().await?;
         self.get_workspace(&card.project_id).await
     }
+
+    pub async fn edit_turn(
+        &self,
+        turn_id: &str,
+        user_content: &str,
+    ) -> Result<ProjectWorkspace, sqlx::Error> {
+        let turn = self.get_turn(turn_id).await?;
+        let card = self.get_card(&turn.card_id).await?;
+        let mut tx = self.pool.begin().await?;
+        archive_turn_revision(&mut tx, &turn, "edit").await?;
+        sqlx::query(
+            "UPDATE turns SET user_content = ?, assistant_content = '', status = 'idle',
+             error_message = NULL, request_id = NULL, updated_at = ? WHERE id = ?",
+        )
+        .bind(user_content)
+        .bind(Utc::now().to_rfc3339())
+        .bind(turn_id)
+        .execute(&mut *tx)
+        .await?;
+        mark_card_tree_stale(&mut tx, &card.id).await?;
+        tx.commit().await?;
+        self.get_workspace(&card.project_id).await
+    }
+
+    pub async fn delete_turn(&self, turn_id: &str) -> Result<ProjectWorkspace, sqlx::Error> {
+        let turn = self.get_turn(turn_id).await?;
+        let card = self.get_card(&turn.card_id).await?;
+        let mut tx = self.pool.begin().await?;
+        archive_turn_revision(&mut tx, &turn, "delete").await?;
+        sqlx::query("DELETE FROM turns WHERE id = ?")
+            .bind(turn_id)
+            .execute(&mut *tx)
+            .await?;
+        mark_card_tree_stale(&mut tx, &card.id).await?;
+        tx.commit().await?;
+        self.get_workspace(&card.project_id).await
+    }
+
+    pub async fn regenerate_turn(&self, turn_id: &str) -> Result<(Card, Turn), sqlx::Error> {
+        let turn = self.get_turn(turn_id).await?;
+        let card = self.get_card(&turn.card_id).await?;
+        let branch = self
+            .create_card(&CreateCardInput {
+                project_id: card.project_id,
+                source_card_id: card.id,
+                relation: "branch".to_owned(),
+                title: format!("Alternative · {}", card.title),
+                branch_from_turn_id: Some(turn.id.clone()),
+                selected_text: None,
+            })
+            .await?;
+        Ok((branch, turn))
+    }
+}
+
+async fn archive_turn_revision(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    turn: &Turn,
+    revision_kind: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO turn_revisions
+         (id,turn_id,revision_kind,user_content,assistant_content,status,created_at)
+         VALUES (?,?,?,?,?,?,?)",
+    )
+    .bind(Uuid::now_v7().to_string())
+    .bind(&turn.id)
+    .bind(revision_kind)
+    .bind(&turn.user_content)
+    .bind(&turn.assistant_content)
+    .bind(&turn.status)
+    .bind(Utc::now().to_rfc3339())
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+async fn mark_card_tree_stale(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    card_id: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "WITH RECURSIVE affected(id) AS (
+            SELECT id FROM cards WHERE id = ?
+            UNION ALL
+            SELECT cards.id FROM cards JOIN affected ON cards.parent_id = affected.id
+         )
+         UPDATE cards SET context_stale = 1 WHERE id IN (SELECT id FROM affected)",
+    )
+    .bind(card_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -641,5 +734,46 @@ mod tests {
             attached[0].target_turn_id.as_deref(),
             Some(target.id.as_str())
         );
+    }
+
+    #[tokio::test]
+    async fn edit_and_delete_turns_archive_revisions_and_preserve_regeneration_source() {
+        let database = Database::in_memory().await.expect("database");
+        let workspace = database.create_project("History").await.expect("project");
+        let turn = database
+            .create_streaming_turn(&workspace.cards[0].id, "original", "model", "request")
+            .await
+            .expect("turn");
+        database
+            .update_turn(&turn.id, "answer", "completed", None)
+            .await
+            .expect("complete");
+        let (branch, source) = database
+            .regenerate_turn(&turn.id)
+            .await
+            .expect("regenerate");
+        assert_eq!(source.user_content, "original");
+        assert_eq!(
+            branch.branch_from_turn_id.as_deref(),
+            Some(turn.id.as_str())
+        );
+
+        let edited = database.edit_turn(&turn.id, "edited").await.expect("edit");
+        assert_eq!(edited.turns[0].user_content, "edited");
+        assert_eq!(edited.turns[0].status, "idle");
+        assert!(edited.cards[0].context_stale);
+        let revision_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM turn_revisions")
+            .fetch_one(database.pool())
+            .await
+            .expect("revisions");
+        assert_eq!(revision_count, 1);
+
+        let deleted = database.delete_turn(&turn.id).await.expect("delete");
+        assert!(deleted.turns.is_empty());
+        let revision_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM turn_revisions")
+            .fetch_one(database.pool())
+            .await
+            .expect("revisions");
+        assert_eq!(revision_count, 2);
     }
 }

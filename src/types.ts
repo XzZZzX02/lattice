@@ -117,3 +117,8 @@ export interface CreateQuoteInput {
   startOffset: number;
   endOffset: number;
 }
+
+export interface RegeneratedTurn {
+  card: Card;
+  sourceTurn: Turn;
+}

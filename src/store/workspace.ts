@@ -1,5 +1,7 @@
 import { create } from "zustand";
-import { cardApi, chatApi, modelApi, quoteApi, workspaceApi } from "../lib/ipc";
+import {
+  cardApi, chatApi, modelApi, quoteApi, turnApi, workspaceApi
+} from "../lib/ipc";
 import type {
   CreateCardInput, CreateQuoteInput, ModelProfile, Project, ProjectWorkspace,
   Quote, StreamEvent, Turn
@@ -27,6 +29,9 @@ interface WorkspaceState {
   renameCard: (cardId: string, title: string) => Promise<void>;
   addQuote: (input: CreateQuoteInput) => Promise<void>;
   removeQuote: (quoteId: string) => void;
+  editTurn: (turnId: string, userContent: string) => Promise<void>;
+  deleteTurn: (turnId: string) => Promise<void>;
+  regenerateTurn: (turnId: string) => Promise<void>;
 }
 
 function errorMessage(error: unknown): string {
@@ -170,7 +175,40 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   removeQuote: (quoteId) =>
     set((state) => ({
       pendingQuotes: state.pendingQuotes.filter((quote) => quote.id !== quoteId)
-    }))
+    })),
+  editTurn: async (turnId, userContent) => {
+    try {
+      const workspace = await turnApi.edit(turnId, userContent);
+      set({ workspace });
+    } catch (error) {
+      set({ error: errorMessage(error) });
+    }
+  },
+  deleteTurn: async (turnId) => {
+    try {
+      const workspace = await turnApi.delete(turnId);
+      set({ workspace });
+    } catch (error) {
+      set({ error: errorMessage(error) });
+    }
+  },
+  regenerateTurn: async (turnId) => {
+    try {
+      const regenerated = await turnApi.regenerate(turnId);
+      set((state) => ({
+        activeCardId: regenerated.card.id,
+        workspace: state.workspace
+          ? {
+              ...state.workspace,
+              cards: [...state.workspace.cards, regenerated.card]
+            }
+          : null
+      }));
+      await get().sendMessage(regenerated.card.id, regenerated.sourceTurn.userContent);
+    } catch (error) {
+      set({ error: errorMessage(error) });
+    }
+  }
 }));
 
 export function reduceTurns(turns: Turn[], event: StreamEvent): Turn[] {

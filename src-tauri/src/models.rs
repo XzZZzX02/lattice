@@ -150,3 +150,10 @@ pub struct CreateQuoteInput {
     pub start_offset: i64,
     pub end_offset: i64,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegeneratedTurn {
+    pub card: Card,
+    pub source_turn: Turn,
+}

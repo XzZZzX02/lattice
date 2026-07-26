@@ -14,7 +14,8 @@ export function App() {
     projects, workspace, loading, error, modelProfiles, activeModelProfileId,
     activeRequestId, activeCardId, pendingQuotes, loadProjects, createProject,
     selectProject, loadModels, setActiveModel, sendMessage, cancelMessage,
-    createCard, selectCard, renameCard, addQuote, removeQuote
+    createCard, selectCard, renameCard, addQuote, removeQuote, editTurn,
+    deleteTurn, regenerateTurn
   } = useWorkspaceStore();
   const [isCreating, setIsCreating] = useState(false);
   const [title, setTitle] = useState("");
@@ -138,6 +139,18 @@ export function App() {
                 {turns.map((turn) => (
                   <div className="turn" key={turn.id}>
                     <div className="message user">{turn.userContent}</div>
+                    <div className="turn-menu">
+                      <button onClick={() => {
+                        const content = window.prompt("Edit message", turn.userContent);
+                        if (content?.trim()) void editTurn(turn.id, content);
+                      }}>Edit</button>
+                      <button onClick={() => void regenerateTurn(turn.id)}>Regenerate</button>
+                      <button onClick={() => {
+                        if (window.confirm("Delete this dialogue? Its previous value remains in the local revision log.")) {
+                          void deleteTurn(turn.id);
+                        }
+                      }}>Delete</button>
+                    </div>
                     <div
                       className={`message assistant ${turn.status}`}
                       onMouseUp={(event) => {
