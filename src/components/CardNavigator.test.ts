@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Card } from "../types";
-import { buildCardGraph } from "./CardNavigator";
+import { buildCardGraph } from "../lib/cardGraph";
 
 function card(index: number): Card {
   return {
