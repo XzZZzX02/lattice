@@ -2,13 +2,15 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import type {
   Card,
   CreateCardInput,
+  CreateQuoteInput,
   ModelProfile,
   Project,
   ProjectWorkspace,
   SaveModelProfileInput
   , SendMessageInput,
   StreamEvent,
-  Turn
+  Turn,
+  Quote
 } from "../types";
 
 export const workspaceApi = {
@@ -46,4 +48,9 @@ export const cardApi = {
     invoke<Card>("create_card", { input }),
   rename: (cardId: string, title: string) =>
     invoke<ProjectWorkspace>("rename_card", { cardId, title })
+};
+
+export const quoteApi = {
+  create: (input: CreateQuoteInput) =>
+    invoke<Quote>("create_quote", { input })
 };

@@ -4,8 +4,8 @@ use crate::{
     chat::RequestRegistry,
     db::Database,
     models::{
-        Card, CreateCardInput, ModelProfile, Project, ProjectWorkspace, SaveModelProfileInput,
-        SendMessageInput, StreamEvent, Turn,
+        Card, CreateCardInput, CreateQuoteInput, ModelProfile, Project, ProjectWorkspace, Quote,
+        SaveModelProfileInput, SendMessageInput, StreamEvent, Turn,
     },
     models_service,
 };
@@ -36,6 +36,25 @@ pub async fn create_card(
         .create_card(&input)
         .await
         .map_err(|_| "Unable to create card".to_owned())
+}
+
+#[tauri::command]
+pub async fn create_quote(
+    database: State<'_, Database>,
+    input: CreateQuoteInput,
+) -> Result<Quote, String> {
+    let length = input.selected_text.chars().count();
+    if length == 0
+        || length > 8_000
+        || input.start_offset < 0
+        || input.end_offset <= input.start_offset
+    {
+        return Err("Selected quote is invalid".to_owned());
+    }
+    database
+        .create_quote(&input)
+        .await
+        .map_err(|_| "Unable to save selected quote".to_owned())
 }
 
 #[tauri::command]

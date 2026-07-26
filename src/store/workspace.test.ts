@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { cardApi, chatApi, modelApi, workspaceApi } from "../lib/ipc";
+import { cardApi, chatApi, modelApi, quoteApi, workspaceApi } from "../lib/ipc";
 import type { ProjectWorkspace } from "../types";
 import { useWorkspaceStore } from "./workspace";
 
@@ -11,7 +11,8 @@ vi.mock("../lib/ipc", () => ({
   },
   modelApi: { list: vi.fn() },
   chatApi: { send: vi.fn(), cancel: vi.fn() },
-  cardApi: { create: vi.fn(), rename: vi.fn() }
+  cardApi: { create: vi.fn(), rename: vi.fn() },
+  quoteApi: { create: vi.fn() }
 }));
 
 const workspace: ProjectWorkspace = {
@@ -58,6 +59,7 @@ describe("workspace store", () => {
       activeModelProfileId: null,
       activeRequestId: null
       ,activeCardId: null
+      ,pendingQuotes: []
     });
   });
 
@@ -129,6 +131,30 @@ describe("workspace store", () => {
     vi.mocked(cardApi.rename).mockResolvedValue(renamed);
     await useWorkspaceStore.getState().renameCard("card-1", "Renamed");
     expect(useWorkspaceStore.getState().workspace?.cards[0].title).toBe("Renamed");
+  });
+
+  it("adds and removes a traceable quote", async () => {
+    const quote = {
+      id: "q1",
+      turnId: "t1",
+      targetTurnId: null,
+      selectedText: "selected",
+      startOffset: 2,
+      endOffset: 10,
+      createdAt: ""
+    };
+    vi.mocked(quoteApi.create).mockResolvedValue(quote);
+
+    await useWorkspaceStore.getState().addQuote({
+      turnId: "t1",
+      selectedText: "selected",
+      startOffset: 2,
+      endOffset: 10
+    });
+    expect(useWorkspaceStore.getState().pendingQuotes).toEqual([quote]);
+
+    useWorkspaceStore.getState().removeQuote("q1");
+    expect(useWorkspaceStore.getState().pendingQuotes).toEqual([]);
   });
 
   it("loads and selects the most recent project", async () => {

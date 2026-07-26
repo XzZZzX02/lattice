@@ -34,6 +34,12 @@ pub async fn build_context(database: &Database, card_id: &str) -> Result<BuiltCo
             if let Some(parent) = parent(&chain) {
                 append_parent_summary(parent, &mut messages);
             }
+            if !current.summary.trim().is_empty() {
+                messages.push(ChatMessage {
+                    role: "system".to_owned(),
+                    content: current.summary.clone(),
+                });
+            }
             append_card_turns(database, current, None, &mut messages).await?;
         }
         "divergent" => {
@@ -115,6 +121,16 @@ async fn append_card_turns(
         if stop_before_turn_id == Some(turn.id.as_str()) {
             break;
         }
+        for quote in database
+            .quotes_for_target(&turn.id)
+            .await
+            .map_err(|_| "Unable to load quoted context".to_owned())?
+        {
+            messages.push(ChatMessage {
+                role: "system".to_owned(),
+                content: format!("Quoted source: “{}”", quote.selected_text),
+            });
+        }
         messages.push(ChatMessage {
             role: "user".to_owned(),
             content: turn.user_content,
@@ -184,6 +200,7 @@ mod tests {
                 relation: "child".to_owned(),
                 title: "Sibling".to_owned(),
                 branch_from_turn_id: None,
+                selected_text: None,
             })
             .await
             .expect("sibling");
@@ -195,6 +212,7 @@ mod tests {
                 relation: "divergent".to_owned(),
                 title: "Direction".to_owned(),
                 branch_from_turn_id: None,
+                selected_text: None,
             })
             .await
             .expect("divergent");
@@ -229,6 +247,7 @@ mod tests {
                 relation: "branch".to_owned(),
                 title: "Alternative".to_owned(),
                 branch_from_turn_id: Some(branch_point.id),
+                selected_text: None,
             })
             .await
             .expect("branch");

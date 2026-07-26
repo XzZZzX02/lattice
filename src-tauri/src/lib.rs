@@ -31,6 +31,7 @@ pub fn run() {
             commands::rename_project,
             commands::archive_project,
             commands::create_card,
+            commands::create_quote,
             commands::rename_card,
             commands::list_model_profiles,
             commands::save_model_profile,

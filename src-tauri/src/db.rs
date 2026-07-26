@@ -5,7 +5,8 @@ use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use uuid::Uuid;
 
 use crate::models::{
-    Card, CreateCardInput, ModelProfile, Project, ProjectWorkspace, SaveModelProfileInput, Turn,
+    Card, CreateCardInput, CreateQuoteInput, ModelProfile, Project, ProjectWorkspace, Quote,
+    SaveModelProfileInput, Turn,
 };
 
 #[derive(Clone)]
@@ -231,6 +232,53 @@ impl Database {
             .await
     }
 
+    pub async fn create_quote(&self, input: &CreateQuoteInput) -> Result<Quote, sqlx::Error> {
+        let id = Uuid::now_v7().to_string();
+        let now = Utc::now().to_rfc3339();
+        sqlx::query(
+            "INSERT INTO quotes (id,turn_id,selected_text,start_offset,end_offset,created_at)
+             VALUES (?,?,?,?,?,?)",
+        )
+        .bind(&id)
+        .bind(&input.turn_id)
+        .bind(&input.selected_text)
+        .bind(input.start_offset)
+        .bind(input.end_offset)
+        .bind(&now)
+        .execute(&self.pool)
+        .await?;
+        sqlx::query_as("SELECT * FROM quotes WHERE id = ?")
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await
+    }
+
+    pub async fn attach_quotes(
+        &self,
+        quote_ids: &[String],
+        target_turn_id: &str,
+    ) -> Result<(), sqlx::Error> {
+        let mut tx = self.pool.begin().await?;
+        for quote_id in quote_ids {
+            sqlx::query(
+                "UPDATE quotes SET target_turn_id = ? WHERE id = ? AND target_turn_id IS NULL",
+            )
+            .bind(target_turn_id)
+            .bind(quote_id)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    pub async fn quotes_for_target(&self, target_turn_id: &str) -> Result<Vec<Quote>, sqlx::Error> {
+        sqlx::query_as("SELECT * FROM quotes WHERE target_turn_id = ? ORDER BY created_at")
+            .bind(target_turn_id)
+            .fetch_all(&self.pool)
+            .await
+    }
+
     pub async fn create_card(&self, input: &CreateCardInput) -> Result<Card, sqlx::Error> {
         let id = Uuid::now_v7().to_string();
         let now = Utc::now().to_rfc3339();
@@ -264,6 +312,13 @@ impl Database {
         .bind(&now)
         .execute(&mut *tx)
         .await?;
+        if let Some(selected_text) = input.selected_text.as_deref() {
+            sqlx::query("UPDATE cards SET summary = ? WHERE id = ?")
+                .bind(format!("Focus excerpt: {selected_text}"))
+                .bind(&id)
+                .execute(&mut *tx)
+                .await?;
+        }
         tx.commit().await?;
         sqlx::query_as("SELECT * FROM cards WHERE id = ?")
             .bind(id)
@@ -456,6 +511,7 @@ mod tests {
                     relation: relation.to_owned(),
                     title: relation.to_owned(),
                     branch_from_turn_id: None,
+                    selected_text: None,
                 })
                 .await
                 .expect("card");
@@ -473,6 +529,7 @@ mod tests {
                 relation: "branch".to_owned(),
                 title: "branch".to_owned(),
                 branch_from_turn_id: Some(turn.id.clone()),
+                selected_text: None,
             })
             .await
             .expect("branch");
@@ -491,6 +548,7 @@ mod tests {
                 relation: "child".to_owned(),
                 title: "Child".to_owned(),
                 branch_from_turn_id: None,
+                selected_text: None,
             })
             .await
             .expect("child");
@@ -501,6 +559,7 @@ mod tests {
                 relation: "divergent".to_owned(),
                 title: "Sibling".to_owned(),
                 branch_from_turn_id: None,
+                selected_text: None,
             })
             .await
             .expect("sibling");
@@ -511,6 +570,7 @@ mod tests {
                 relation: "child".to_owned(),
                 title: "Grandchild".to_owned(),
                 branch_from_turn_id: None,
+                selected_text: None,
             })
             .await
             .expect("grandchild");
@@ -542,6 +602,44 @@ mod tests {
                 .find(|card| card.id == child.id)
                 .expect("child")
                 .context_stale
+        );
+    }
+
+    #[tokio::test]
+    async fn quote_keeps_source_offsets_and_attaches_to_target_turn() {
+        let database = Database::in_memory().await.expect("database");
+        let workspace = database.create_project("Quotes").await.expect("project");
+        let source = database
+            .create_streaming_turn(&workspace.cards[0].id, "source", "model", "request-1")
+            .await
+            .expect("source turn");
+        let target = database
+            .create_streaming_turn(&workspace.cards[0].id, "target", "model", "request-2")
+            .await
+            .expect("target turn");
+        let quote = database
+            .create_quote(&crate::models::CreateQuoteInput {
+                turn_id: source.id,
+                selected_text: "excerpt".to_owned(),
+                start_offset: 4,
+                end_offset: 11,
+            })
+            .await
+            .expect("quote");
+        database
+            .attach_quotes(std::slice::from_ref(&quote.id), &target.id)
+            .await
+            .expect("attach");
+
+        let attached = database
+            .quotes_for_target(&target.id)
+            .await
+            .expect("quotes");
+        assert_eq!(attached[0].selected_text, "excerpt");
+        assert_eq!(attached[0].start_offset, 4);
+        assert_eq!(
+            attached[0].target_turn_id.as_deref(),
+            Some(target.id.as_str())
         );
     }
 }

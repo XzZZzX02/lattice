@@ -1,7 +1,8 @@
 import { create } from "zustand";
-import { cardApi, chatApi, modelApi, workspaceApi } from "../lib/ipc";
+import { cardApi, chatApi, modelApi, quoteApi, workspaceApi } from "../lib/ipc";
 import type {
-  CreateCardInput, ModelProfile, Project, ProjectWorkspace, StreamEvent, Turn
+  CreateCardInput, CreateQuoteInput, ModelProfile, Project, ProjectWorkspace,
+  Quote, StreamEvent, Turn
 } from "../types";
 
 interface WorkspaceState {
@@ -13,6 +14,7 @@ interface WorkspaceState {
   activeModelProfileId: string | null;
   activeRequestId: string | null;
   activeCardId: string | null;
+  pendingQuotes: Quote[];
   loadProjects: () => Promise<void>;
   createProject: (title: string) => Promise<void>;
   selectProject: (projectId: string) => Promise<void>;
@@ -23,6 +25,8 @@ interface WorkspaceState {
   selectCard: (cardId: string) => void;
   createCard: (input: CreateCardInput) => Promise<void>;
   renameCard: (cardId: string, title: string) => Promise<void>;
+  addQuote: (input: CreateQuoteInput) => Promise<void>;
+  removeQuote: (quoteId: string) => void;
 }
 
 function errorMessage(error: unknown): string {
@@ -38,6 +42,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   activeModelProfileId: null,
   activeRequestId: null,
   activeCardId: null,
+  pendingQuotes: [],
   loadProjects: async () => {
     set({ loading: true, error: null });
     try {
@@ -109,7 +114,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       }));
     };
     try {
-      await chatApi.send({ cardId, modelProfileId, content }, handleEvent);
+      await chatApi.send(
+        {
+          cardId,
+          modelProfileId,
+          content,
+          quoteIds: get().pendingQuotes.map((quote) => quote.id)
+        },
+        handleEvent
+      );
+      set({ pendingQuotes: [] });
     } catch (error) {
       set({ activeRequestId: null, error: errorMessage(error) });
     }
@@ -144,7 +158,19 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     } catch (error) {
       set({ error: errorMessage(error) });
     }
-  }
+  },
+  addQuote: async (input) => {
+    try {
+      const quote = await quoteApi.create(input);
+      set((state) => ({ pendingQuotes: [...state.pendingQuotes, quote] }));
+    } catch (error) {
+      set({ error: errorMessage(error) });
+    }
+  },
+  removeQuote: (quoteId) =>
+    set((state) => ({
+      pendingQuotes: state.pendingQuotes.filter((quote) => quote.id !== quoteId)
+    }))
 }));
 
 export function reduceTurns(turns: Turn[], event: StreamEvent): Turn[] {

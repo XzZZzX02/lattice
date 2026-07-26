@@ -12,13 +12,20 @@ import { CardNavigator } from "./components/CardNavigator";
 export function App() {
   const {
     projects, workspace, loading, error, modelProfiles, activeModelProfileId,
-    activeRequestId, activeCardId, loadProjects, createProject, selectProject, loadModels,
-    setActiveModel, sendMessage, cancelMessage, createCard, selectCard, renameCard
+    activeRequestId, activeCardId, pendingQuotes, loadProjects, createProject,
+    selectProject, loadModels, setActiveModel, sendMessage, cancelMessage,
+    createCard, selectCard, renameCard, addQuote, removeQuote
   } = useWorkspaceStore();
   const [isCreating, setIsCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [message, setMessage] = useState("");
+  const [selection, setSelection] = useState<{
+    turnId: string;
+    text: string;
+    startOffset: number;
+    endOffset: number;
+  } | null>(null);
 
   useEffect(() => {
     void loadProjects();
@@ -44,7 +51,10 @@ export function App() {
     await sendMessage(activeCard.id, content);
   }
 
-  function addCard(relation: "child" | "divergent" | "branch") {
+  function addCard(
+    relation: "child" | "divergent" | "branch",
+    selectedText?: string
+  ) {
     if (!workspace || !activeCard) return;
     const lastTurn = turns.at(-1);
     if (relation === "branch" && !lastTurn) return;
@@ -53,8 +63,10 @@ export function App() {
       sourceCardId: activeCard.id,
       relation,
       title: relation === "child" ? "Deeper question" : relation === "divergent" ? "New direction" : "Alternative branch",
-      branchFromTurnId: relation === "branch" ? lastTurn?.id : undefined
+      branchFromTurnId: relation === "branch" ? lastTurn?.id : undefined,
+      selectedText
     });
+    setSelection(null);
   }
 
   return (
@@ -126,7 +138,22 @@ export function App() {
                 {turns.map((turn) => (
                   <div className="turn" key={turn.id}>
                     <div className="message user">{turn.userContent}</div>
-                    <div className={`message assistant ${turn.status}`}>
+                    <div
+                      className={`message assistant ${turn.status}`}
+                      onMouseUp={(event) => {
+                        const selected = window.getSelection();
+                        const text = selected?.toString().trim() ?? "";
+                        if (!text || !selected?.anchorNode || !event.currentTarget.contains(selected.anchorNode)) return;
+                        const startOffset = turn.assistantContent.indexOf(text);
+                        if (startOffset < 0) return;
+                        setSelection({
+                          turnId: turn.id,
+                          text,
+                          startOffset,
+                          endOffset: startOffset + text.length
+                        });
+                      }}
+                    >
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>
                         {turn.assistantContent || (turn.status === "streaming" ? "Thinking…" : "")}
                       </ReactMarkdown>
@@ -142,6 +169,23 @@ export function App() {
                     </div>
                   </div>
                 ))}
+                {selection && (
+                  <div className="selection-toolbar" role="toolbar" aria-label="Selected text actions">
+                    <span>“{selection.text.slice(0, 48)}{selection.text.length > 48 ? "…" : ""}”</span>
+                    <button onClick={() => {
+                      void addQuote({
+                        turnId: selection.turnId,
+                        selectedText: selection.text,
+                        startOffset: selection.startOffset,
+                        endOffset: selection.endOffset
+                      });
+                      setSelection(null);
+                    }}>Quote</button>
+                    <button onClick={() => addCard("child", selection.text)}>Child</button>
+                    <button onClick={() => addCard("divergent", selection.text)}>Divergent</button>
+                    <button onClick={() => void navigator.clipboard.writeText(selection.text)}>Copy</button>
+                  </div>
+                )}
                 <footer className="card-actions">
                   <button onClick={() => addCard("child")}><Workflow size={15} /> Child</button>
                   <button onClick={() => addCard("divergent")}><Network size={15} /> Divergent</button>
@@ -154,6 +198,15 @@ export function App() {
                 onSelect={selectCard}
               />
             </div>
+            {pendingQuotes.length > 0 && (
+              <div className="quote-tray">
+                {pendingQuotes.map((quote) => (
+                  <button key={quote.id} onClick={() => removeQuote(quote.id)} title="Remove quote">
+                    “{quote.selectedText.slice(0, 44)}”
+                  </button>
+                ))}
+              </div>
+            )}
             <form className="composer" onSubmit={submitMessage}>
               <select aria-label="Model" value={activeModelProfileId ?? ""} onChange={(e) => setActiveModel(e.target.value)}>
                 <option value="">Configure a model</option>

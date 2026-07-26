@@ -62,6 +62,10 @@ pub async fn run_chat(
         )
         .await
         .map_err(|_| "Unable to create the message".to_owned())?;
+    database
+        .attach_quotes(&input.quote_ids, &turn.id)
+        .await
+        .map_err(|_| "Unable to attach selected quotes".to_owned())?;
     send_event(
         &on_event,
         StreamEvent::Started {
