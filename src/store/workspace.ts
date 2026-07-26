@@ -1,7 +1,9 @@
 import { create } from "zustand";
 import {
-  cardApi, chatApi, knowledgeApi, modelApi, quoteApi, turnApi, workspaceApi
+  cardApi, chatApi, fileApi, knowledgeApi, modelApi, quoteApi, turnApi,
+  workspaceApi
 } from "../lib/ipc";
+import type { ExportFormat } from "../lib/ipc";
 import type {
   CreateCardInput, CreateQuoteInput, ModelProfile, Project, ProjectWorkspace,
   Quote, SearchResult, StreamEvent, Turn
@@ -36,6 +38,8 @@ interface WorkspaceState {
   regenerateTurn: (turnId: string) => Promise<void>;
   search: (query: string) => Promise<void>;
   toggleFavorite: (turnId: string, cardId: string) => Promise<void>;
+  exportProject: (format: ExportFormat) => Promise<boolean>;
+  importProject: () => Promise<boolean>;
 }
 
 function errorMessage(error: unknown): string {
@@ -244,6 +248,44 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       }));
     } catch (error) {
       set({ error: errorMessage(error) });
+    }
+  },
+  exportProject: async (format) => {
+    const project = get().workspace?.project;
+    if (!project) return false;
+    try {
+      set({ error: null });
+      return await fileApi.exportProject(project.id, project.title, format);
+    } catch (error) {
+      set({ error: errorMessage(error) });
+      return false;
+    }
+  },
+  importProject: async () => {
+    try {
+      set({ loading: true, error: null });
+      const workspace = await fileApi.importProject();
+      if (!workspace) {
+        set({ loading: false });
+        return false;
+      }
+      const favoriteTurnIds = await knowledgeApi.favoriteTurnIds(
+        workspace.project.id
+      );
+      set((state) => ({
+        workspace,
+        favoriteTurnIds,
+        activeCardId: workspace.project.rootCardId,
+        projects: [
+          workspace.project,
+          ...state.projects.filter((project) => project.id !== workspace.project.id)
+        ],
+        loading: false
+      }));
+      return true;
+    } catch (error) {
+      set({ loading: false, error: errorMessage(error) });
+      return false;
     }
   }
 }));

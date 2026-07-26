@@ -16,6 +16,10 @@ vi.mock("./lib/ipc", () => ({
   cardApi: { create: vi.fn(), rename: vi.fn() },
   quoteApi: { create: vi.fn() },
   turnApi: { edit: vi.fn(), delete: vi.fn(), regenerate: vi.fn() },
+  fileApi: {
+    exportProject: vi.fn().mockResolvedValue(false),
+    importProject: vi.fn().mockResolvedValue(null)
+  },
   knowledgeApi: {
     search: vi.fn().mockResolvedValue([]),
     toggleFavorite: vi.fn(),

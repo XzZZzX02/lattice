@@ -34,6 +34,9 @@ button { color: inherit; }
 .workspace { min-width: 0; padding: 24px 28px 18px; display: flex; flex-direction: column; height: 100vh; }
 .workspace-header { display: flex; justify-content: space-between; align-items: center; max-width: 1140px; width: 100%; margin: 0 auto 22px; }
 .workspace-header h1 { font-size: 20px; margin: 0; }
+.workspace-tools { display: flex; align-items: center; gap: 7px; }
+.workspace-tools > button { display: flex; align-items: center; gap: 5px; border: 1px solid #303833; border-radius: 8px; background: #181d1a; color: #9fa8a2; padding: 7px 9px; font-size: 11px; }
+.workspace-tools > button:hover { color: white; border-color: #465149; }
 .error-banner { position: fixed; top: 16px; right: 16px; z-index: 10; background: #532a2a; border: 1px solid #984747; padding: 10px 14px; border-radius: 10px; }
 .local-pill { border: 1px solid #2c3931; border-radius: 999px; padding: 7px 11px; color: #92d4a5; background: #142019; font-size: 12px; }
 .workspace-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(560px, 820px) 230px; gap: 24px; place-content: center; }

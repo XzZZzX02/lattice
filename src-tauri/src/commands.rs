@@ -140,6 +140,25 @@ pub async fn favorite_turn_ids(
 }
 
 #[tauri::command]
+pub async fn export_project(
+    database: State<'_, Database>,
+    project_id: String,
+    format: String,
+    path: String,
+) -> Result<(), String> {
+    crate::backup::export_project(&database, &project_id, &format, std::path::Path::new(&path))
+        .await
+}
+
+#[tauri::command]
+pub async fn import_project(
+    database: State<'_, Database>,
+    path: String,
+) -> Result<ProjectWorkspace, String> {
+    crate::backup::import_project(&database, std::path::Path::new(&path)).await
+}
+
+#[tauri::command]
 pub async fn rename_card(
     database: State<'_, Database>,
     card_id: String,

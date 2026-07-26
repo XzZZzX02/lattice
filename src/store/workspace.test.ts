@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  cardApi, chatApi, knowledgeApi, modelApi, quoteApi, turnApi, workspaceApi
+  cardApi, chatApi, fileApi, knowledgeApi, modelApi, quoteApi, turnApi,
+  workspaceApi
 } from "../lib/ipc";
 import type { ProjectWorkspace } from "../types";
 import { useWorkspaceStore } from "./workspace";
@@ -16,6 +17,7 @@ vi.mock("../lib/ipc", () => ({
   cardApi: { create: vi.fn(), rename: vi.fn() },
   quoteApi: { create: vi.fn() },
   turnApi: { edit: vi.fn(), delete: vi.fn(), regenerate: vi.fn() },
+  fileApi: { exportProject: vi.fn(), importProject: vi.fn() },
   knowledgeApi: {
     search: vi.fn(),
     toggleFavorite: vi.fn(),
@@ -237,6 +239,36 @@ describe("workspace store", () => {
 
     expect(useWorkspaceStore.getState().workspace).toEqual(workspace);
     expect(useWorkspaceStore.getState().loading).toBe(false);
+  });
+
+  it("exports and imports versioned project backups", async () => {
+    useWorkspaceStore.setState({ workspace, projects: [workspace.project] });
+    vi.mocked(fileApi.exportProject).mockResolvedValue(true);
+    expect(await useWorkspaceStore.getState().exportProject("json")).toBe(true);
+    expect(fileApi.exportProject).toHaveBeenCalledWith(
+      "project-1",
+      "Research",
+      "json"
+    );
+
+    const imported = {
+      ...workspace,
+      project: { ...workspace.project, id: "project-2", title: "Imported" },
+      cards: [{ ...workspace.cards[0], id: "card-2", projectId: "project-2" }]
+    };
+    vi.mocked(fileApi.importProject).mockResolvedValue(imported);
+    vi.mocked(knowledgeApi.favoriteTurnIds).mockResolvedValue(["turn-1"]);
+    expect(await useWorkspaceStore.getState().importProject()).toBe(true);
+    expect(useWorkspaceStore.getState().workspace).toEqual(imported);
+    expect(useWorkspaceStore.getState().projects[0].id).toBe("project-2");
+    expect(useWorkspaceStore.getState().favoriteTurnIds).toEqual(["turn-1"]);
+  });
+
+  it("leaves workspace unchanged when file dialogs are cancelled", async () => {
+    useWorkspaceStore.setState({ workspace });
+    vi.mocked(fileApi.importProject).mockResolvedValue(null);
+    expect(await useWorkspaceStore.getState().importProject()).toBe(false);
+    expect(useWorkspaceStore.getState().workspace).toEqual(workspace);
   });
 
   it("creates and prepends a project", async () => {

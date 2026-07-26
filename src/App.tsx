@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-  BrainCircuit, FolderPlus, GitBranch, Library, Network, Plus, Search,
-  Settings2, Square, Star, Workflow
+  BrainCircuit, Download, FolderPlus, GitBranch, Library, Network, Plus,
+  Search, Settings2, Square, Star, Upload, Workflow
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -16,7 +16,7 @@ export function App() {
     selectProject, loadModels, setActiveModel, sendMessage, cancelMessage,
     createCard, selectCard, renameCard, addQuote, removeQuote, editTurn,
     deleteTurn, regenerateTurn, search, searchResults, favoriteTurnIds,
-    toggleFavorite
+    toggleFavorite, exportProject, importProject
   } = useWorkspaceStore();
   const [isCreating, setIsCreating] = useState(false);
   const [title, setTitle] = useState("");
@@ -83,6 +83,7 @@ export function App() {
           <button onClick={() => setIsCreating(true)}><Plus size={17} /> New project</button>
           <button><FolderPlus size={17} /> New folder</button>
           <button><Library size={17} /> Import document</button>
+          <button onClick={() => void importProject()}><Upload size={17} /> Import project</button>
         </nav>
         <form className="search-form" onSubmit={(event) => {
           event.preventDefault();
@@ -137,7 +138,11 @@ export function App() {
           <>
             <header className="workspace-header">
               <div><p className="eyebrow">Current exploration</p><h1>{workspace.project.title}</h1></div>
-              <span className="local-pill">Local only</span>
+              <div className="workspace-tools">
+                <button onClick={() => void exportProject("json")} title="Export a restorable backup"><Download size={13} /> JSON</button>
+                <button onClick={() => void exportProject("markdown")} title="Export a readable copy"><Download size={13} /> Markdown</button>
+                <span className="local-pill">Local only</span>
+              </div>
             </header>
             <div className="workspace-grid">
               <article className="conversation-card">

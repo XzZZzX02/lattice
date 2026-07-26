@@ -1,4 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import type {
   Card,
   CreateCardInput,
@@ -6,13 +7,13 @@ import type {
   ModelProfile,
   Project,
   ProjectWorkspace,
-  SaveModelProfileInput
-  , SendMessageInput,
+  Quote,
+  RegeneratedTurn,
+  SaveModelProfileInput,
+  SearchResult,
+  SendMessageInput,
   StreamEvent,
-  Turn,
-  Quote
-  ,RegeneratedTurn,
-  SearchResult
+  Turn
 } from "../types";
 
 export const workspaceApi = {
@@ -74,3 +75,41 @@ export const knowledgeApi = {
   favoriteTurnIds: (projectId: string) =>
     invoke<string[]>("favorite_turn_ids", { projectId })
 };
+
+export type ExportFormat = "json" | "markdown";
+
+export const fileApi = {
+  exportProject: async (
+    projectId: string,
+    projectTitle: string,
+    format: ExportFormat
+  ) => {
+    const extension = format === "markdown" ? "md" : "json";
+    const path = await save({
+      defaultPath: `${safeFilename(projectTitle)}.${extension}`,
+      filters: [{
+        name: format === "markdown" ? "Markdown" : "Lattice project",
+        extensions: [extension]
+      }]
+    });
+    if (!path) return false;
+    await invoke<void>("export_project", { projectId, format, path });
+    return true;
+  },
+  importProject: async () => {
+    const path = await open({
+      directory: false,
+      multiple: false,
+      filters: [{ name: "Lattice project", extensions: ["json"] }]
+    });
+    if (typeof path !== "string") return null;
+    return invoke<ProjectWorkspace>("import_project", { path });
+  }
+};
+
+function safeFilename(value: string): string {
+  const filename = [...value.trim().replace(/[<>:"/\\|?*]/g, "-")]
+    .filter((character) => character.charCodeAt(0) > 31)
+    .join("");
+  return filename || "lattice-project";
+}

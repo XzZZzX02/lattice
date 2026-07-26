@@ -1,3 +1,4 @@
+pub mod backup;
 pub mod chat;
 pub mod commands;
 pub mod context;
@@ -38,6 +39,8 @@ pub fn run() {
             commands::search,
             commands::toggle_turn_favorite,
             commands::favorite_turn_ids,
+            commands::export_project,
+            commands::import_project,
             commands::rename_card,
             commands::list_model_profiles,
             commands::save_model_profile,

@@ -168,3 +168,13 @@ pub struct SearchResult {
     pub title: String,
     pub excerpt: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Favorite {
+    pub id: String,
+    pub project_id: String,
+    pub card_id: Option<String>,
+    pub turn_id: Option<String>,
+    pub created_at: String,
+}
