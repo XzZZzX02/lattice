@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { workspaceApi } from "../lib/ipc";
+import { chatApi, modelApi, workspaceApi } from "../lib/ipc";
 import type { ProjectWorkspace } from "../types";
 import { useWorkspaceStore } from "./workspace";
 
@@ -8,7 +8,9 @@ vi.mock("../lib/ipc", () => ({
     listProjects: vi.fn(),
     createProject: vi.fn(),
     getWorkspace: vi.fn()
-  }
+  },
+  modelApi: { list: vi.fn() },
+  chatApi: { send: vi.fn(), cancel: vi.fn() }
 }));
 
 const workspace: ProjectWorkspace = {
@@ -51,7 +53,48 @@ describe("workspace store", () => {
       workspace: null,
       loading: false,
       error: null
+      ,modelProfiles: [],
+      activeModelProfileId: null,
+      activeRequestId: null
     });
+  });
+
+  it("loads model profiles and streams immutable turn updates", async () => {
+    const profile = {
+      id: "m1", name: "Local", provider: "ollama" as const,
+      baseUrl: "http://localhost", model: "qwen", keychainRef: null,
+      createdAt: "", updatedAt: ""
+    };
+    vi.mocked(modelApi.list).mockResolvedValue([profile]);
+    useWorkspaceStore.setState({ workspace });
+    await useWorkspaceStore.getState().loadModels();
+    expect(useWorkspaceStore.getState().activeModelProfileId).toBe("m1");
+
+    vi.mocked(chatApi.send).mockImplementation(async (_input, onEvent) => {
+      const turn = {
+        id: "t1", cardId: "card-1", userContent: "hello",
+        assistantContent: "", modelProfileId: "m1", status: "streaming" as const,
+        errorMessage: null, requestId: "r1", createdAt: "", updatedAt: ""
+      };
+      onEvent({ type: "started", requestId: "r1", turn });
+      onEvent({ type: "delta", requestId: "r1", turnId: "t1", delta: "world" });
+      onEvent({ type: "completed", requestId: "r1", turn: { ...turn, assistantContent: "world", status: "completed" } });
+      return { ...turn, assistantContent: "world", status: "completed" };
+    });
+    await useWorkspaceStore.getState().sendMessage("card-1", "hello");
+    expect(useWorkspaceStore.getState().workspace?.turns[0].assistantContent).toBe("world");
+    expect(useWorkspaceStore.getState().activeRequestId).toBeNull();
+  });
+
+  it("cancels the active request and handles missing configuration", async () => {
+    useWorkspaceStore.setState({ activeModelProfileId: null });
+    await useWorkspaceStore.getState().sendMessage("card-1", "hello");
+    expect(useWorkspaceStore.getState().error).toContain("Configure");
+
+    useWorkspaceStore.setState({ activeRequestId: "r1" });
+    vi.mocked(chatApi.cancel).mockResolvedValue();
+    await useWorkspaceStore.getState().cancelMessage();
+    expect(chatApi.cancel).toHaveBeenCalledWith("r1");
   });
 
   it("loads and selects the most recent project", async () => {

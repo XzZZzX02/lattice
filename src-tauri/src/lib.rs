@@ -1,6 +1,8 @@
+pub mod chat;
 pub mod commands;
 pub mod db;
 pub mod models;
+pub mod models_service;
 
 use tauri::Manager;
 
@@ -18,6 +20,7 @@ pub fn run() {
                 &data_dir.join("lattice.sqlite3"),
             ))?;
             app.manage(database);
+            app.manage(chat::RequestRegistry::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -25,7 +28,12 @@ pub fn run() {
             commands::create_project,
             commands::get_workspace,
             commands::rename_project,
-            commands::archive_project
+            commands::archive_project,
+            commands::list_model_profiles,
+            commands::save_model_profile,
+            commands::test_model_profile,
+            commands::send_message,
+            commands::cancel_message
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Lattice");

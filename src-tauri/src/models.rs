@@ -57,3 +57,62 @@ pub struct ProjectWorkspace {
     pub cards: Vec<Card>,
     pub turns: Vec<Turn>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelProfile {
+    pub id: String,
+    pub name: String,
+    pub provider: String,
+    pub base_url: String,
+    pub model: String,
+    pub keychain_ref: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveModelProfileInput {
+    pub id: Option<String>,
+    pub name: String,
+    pub provider: String,
+    pub base_url: String,
+    pub model: String,
+    pub api_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SendMessageInput {
+    pub card_id: String,
+    pub model_profile_id: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum StreamEvent {
+    Started {
+        request_id: String,
+        turn: Turn,
+    },
+    Delta {
+        request_id: String,
+        turn_id: String,
+        delta: String,
+    },
+    Completed {
+        request_id: String,
+        turn: Turn,
+    },
+    Cancelled {
+        request_id: String,
+        turn: Turn,
+    },
+    Failed {
+        request_id: String,
+        turn: Turn,
+        message: String,
+    },
+}
