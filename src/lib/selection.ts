@@ -4,6 +4,11 @@ export interface SourceSelection {
   endOffset: number;
 }
 
+export interface RenderedSelection extends SourceSelection {
+  renderedStartOffset: number;
+  renderedEndOffset: number;
+}
+
 export function resolveSourceSelection(
   source: string,
   renderedPrefix: string,
@@ -27,14 +32,27 @@ export function selectionFromContainer(
   container: HTMLElement,
   source: string,
   selection: Selection | null
-): SourceSelection | null {
+): RenderedSelection | null {
   if (!selection || selection.rangeCount !== 1 || !selection.anchorNode) return null;
   const range = selection.getRangeAt(0);
   if (!container.contains(range.commonAncestorContainer)) return null;
   const prefixRange = document.createRange();
   prefixRange.selectNodeContents(container);
   prefixRange.setEnd(range.startContainer, range.startOffset);
-  return resolveSourceSelection(source, prefixRange.toString(), selection.toString());
+  const renderedSelection = selection.toString();
+  const leadingWhitespace = renderedSelection.length - renderedSelection.trimStart().length;
+  const sourceSelection = resolveSourceSelection(
+    source,
+    prefixRange.toString(),
+    renderedSelection
+  );
+  if (!sourceSelection) return null;
+  const renderedStartOffset = prefixRange.toString().length + leadingWhitespace;
+  return {
+    ...sourceSelection,
+    renderedStartOffset,
+    renderedEndOffset: renderedStartOffset + sourceSelection.text.length
+  };
 }
 
 function countOccurrences(value: string, search: string): number {

@@ -33,7 +33,9 @@ describe("resolveSourceSelection", () => {
     expect(selectionFromContainer(container, "**term** then term", selection)).toEqual({
       text: "term",
       startOffset: 14,
-      endOffset: 18
+      endOffset: 18,
+      renderedStartOffset: 10,
+      renderedEndOffset: 14
     });
     expect(selectionFromContainer(container, "answer", null)).toBeNull();
     container.remove();

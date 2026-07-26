@@ -9,6 +9,11 @@ import { useWorkspaceStore } from "./store/workspace";
 import { ModelSettings } from "./components/ModelSettings";
 import { CardNavigator } from "./components/CardNavigator";
 import { MindscapePanel } from "./components/MindscapePanel";
+import {
+  QuoteChips,
+  SelectionToolbar
+} from "./components/SelectionActions";
+import type { SelectionAnchor } from "./lib/floating";
 import { selectionFromContainer } from "./lib/selection";
 
 export function App() {
@@ -16,7 +21,7 @@ export function App() {
     projects, workspace, loading, error, modelProfiles, activeModelProfileId,
     activeRequestId, activeCardId, pendingQuotes, loadProjects, createProject,
     selectProject, loadModels, setActiveModel, sendMessage, cancelMessage,
-    createCard, selectCard, renameCard, addQuote, removeQuote, editTurn,
+    createCard, createCardFromSelection, selectCard, renameCard, addQuote, removeQuote, editTurn,
     deleteTurn, regenerateTurn, search, searchResults, favoriteTurnIds,
     toggleFavorite, exportProject, importProject, documents, importDocument,
     deleteDocument, documentCitations, mindscape, addMindNode, addMindEdge,
@@ -32,6 +37,9 @@ export function App() {
     text: string;
     startOffset: number;
     endOffset: number;
+    renderedStartOffset: number;
+    renderedEndOffset: number;
+    anchor: SelectionAnchor;
   } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCitation, setActiveCitation] = useState(
@@ -79,6 +87,25 @@ export function App() {
       selectedText
     });
     setSelection(null);
+  }
+
+  function addSelectionCard() {
+    if (!workspace || !activeCard || !selection) return;
+    void createCardFromSelection({
+      projectId: workspace.project.id,
+      sourceCardId: activeCard.id,
+      sourceTurnId: selection.turnId,
+      title: selection.text.slice(0, 120),
+      selectedText: selection.text,
+      startOffset: selection.renderedStartOffset,
+      endOffset: selection.renderedEndOffset
+    });
+    clearSelection();
+  }
+
+  function clearSelection() {
+    setSelection(null);
+    window.getSelection()?.removeAllRanges();
   }
 
   function addToMindscape(
@@ -247,15 +274,24 @@ export function App() {
                     <div
                       className={`message assistant ${turn.status}`}
                       onMouseUp={(event) => {
+                        const browserSelection = window.getSelection();
                         const selected = selectionFromContainer(
                           event.currentTarget,
                           turn.assistantContent,
-                          window.getSelection()
+                          browserSelection
                         );
-                        if (!selected) return;
+                        if (!selected || !browserSelection?.rangeCount) return;
+                        const range = browserSelection.getRangeAt(0);
+                        const rect = range.getBoundingClientRect();
                         setSelection({
                           turnId: turn.id,
-                          ...selected
+                          ...selected,
+                          anchor: {
+                            left: rect.left,
+                            right: rect.right,
+                            top: rect.top,
+                            bottom: rect.bottom
+                          }
                         });
                       }}
                     >
@@ -292,21 +328,29 @@ export function App() {
                   </div>
                 ))}
                 {selection && (
-                  <div className="selection-toolbar" role="toolbar" aria-label="Selected text actions">
-                    <span>“{selection.text.slice(0, 48)}{selection.text.length > 48 ? "…" : ""}”</span>
-                    <button onClick={() => {
+                  <SelectionToolbar
+                    anchor={selection.anchor}
+                    canCreateCard={!workspace.selectionCardLinks.some((link) =>
+                      link.sourceTurnId === selection.turnId
+                      && link.startOffset === selection.renderedStartOffset
+                      && link.endOffset === selection.renderedEndOffset
+                    )}
+                    onCopy={() => {
+                      void navigator.clipboard.writeText(selection.text);
+                      clearSelection();
+                    }}
+                    onCreateCard={addSelectionCard}
+                    onDismiss={clearSelection}
+                    onQuote={() => {
                       void addQuote({
                         turnId: selection.turnId,
                         selectedText: selection.text,
                         startOffset: selection.startOffset,
                         endOffset: selection.endOffset
                       });
-                      setSelection(null);
-                    }}>Quote</button>
-                    <button onClick={() => addCard("child", selection.text)}>Child</button>
-                    <button onClick={() => addCard("divergent", selection.text)}>Divergent</button>
-                    <button onClick={() => void navigator.clipboard.writeText(selection.text)}>Copy</button>
-                  </div>
+                      clearSelection();
+                    }}
+                  />
                 )}
                 <footer className="card-actions">
                   <button onClick={() => addCard("child")}><Workflow size={15} /> Child</button>
@@ -358,33 +402,27 @@ export function App() {
                 )}
               </div>
             </div>
-            {pendingQuotes.length > 0 && (
-              <div className="quote-tray">
-                {pendingQuotes.map((quote) => (
-                  <button key={quote.id} onClick={() => removeQuote(quote.id)} title="Remove quote">
-                    “{quote.selectedText.slice(0, 44)}”
-                  </button>
-                ))}
-              </div>
-            )}
             <form className="composer" onSubmit={submitMessage}>
               <select aria-label="Model" value={activeModelProfileId ?? ""} onChange={(e) => setActiveModel(e.target.value)}>
                 <option value="">Configure a model</option>
                 {modelProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
               </select>
-              <textarea
-                aria-label="Message"
-                placeholder="Explore anything…  ⌘↵ to send"
-                rows={1}
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                    e.preventDefault();
-                    e.currentTarget.form?.requestSubmit();
-                  }
-                }}
-              />
+              <div className="composer-content">
+                <QuoteChips quotes={pendingQuotes} onRemove={removeQuote} />
+                <textarea
+                  aria-label="Message"
+                  placeholder="Explore anything…  ⌘↵ to send"
+                  rows={1}
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      e.currentTarget.form?.requestSubmit();
+                    }
+                  }}
+                />
+              </div>
               {activeRequestId ? (
                 <button type="button" aria-label="Stop" onClick={() => void cancelMessage()}><Square size={13} /></button>
               ) : (
