@@ -313,4 +313,23 @@ mod tests {
         assert_eq!(completed.assistant_content, "World");
         assert_eq!(completed.status, "completed");
     }
+
+    #[tokio::test]
+    async fn reopening_database_marks_streaming_turn_interrupted() {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let path = directory.path().join("recovery.sqlite3");
+        let database = Database::open(&path).await.expect("database");
+        let workspace = database.create_project("Recovery").await.expect("project");
+        let turn = database
+            .create_streaming_turn(&workspace.cards[0].id, "Hello", "model", "request")
+            .await
+            .expect("turn");
+        database.pool().close().await;
+
+        let reopened = Database::open(&path).await.expect("reopen");
+        assert_eq!(
+            reopened.get_turn(&turn.id).await.expect("recovered").status,
+            "interrupted"
+        );
+    }
 }

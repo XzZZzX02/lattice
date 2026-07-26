@@ -108,6 +108,14 @@ export function App() {
                         {turn.assistantContent || (turn.status === "streaming" ? "Thinking…" : "")}
                       </ReactMarkdown>
                       {turn.errorMessage && <p className="turn-error">{turn.errorMessage}</p>}
+                      {["failed", "cancelled", "interrupted"].includes(turn.status) && (
+                        <button
+                          className="retry-button"
+                          onClick={() => activeCard && void sendMessage(activeCard.id, turn.userContent)}
+                        >
+                          Retry
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}

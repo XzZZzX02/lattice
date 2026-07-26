@@ -86,6 +86,17 @@ describe("workspace store", () => {
     expect(useWorkspaceStore.getState().activeRequestId).toBeNull();
   });
 
+  it("cancels the active request and handles missing configuration", async () => {
+    useWorkspaceStore.setState({ activeModelProfileId: null });
+    await useWorkspaceStore.getState().sendMessage("card-1", "hello");
+    expect(useWorkspaceStore.getState().error).toContain("Configure");
+
+    useWorkspaceStore.setState({ activeRequestId: "r1" });
+    vi.mocked(chatApi.cancel).mockResolvedValue();
+    await useWorkspaceStore.getState().cancelMessage();
+    expect(chatApi.cancel).toHaveBeenCalledWith("r1");
+  });
+
   it("loads and selects the most recent project", async () => {
     vi.mocked(workspaceApi.listProjects).mockResolvedValue([workspace.project]);
     vi.mocked(workspaceApi.getWorkspace).mockResolvedValue(workspace);
