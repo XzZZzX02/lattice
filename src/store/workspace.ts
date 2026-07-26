@@ -22,6 +22,7 @@ interface WorkspaceState {
   cancelMessage: () => Promise<void>;
   selectCard: (cardId: string) => void;
   createCard: (input: CreateCardInput) => Promise<void>;
+  renameCard: (cardId: string, title: string) => Promise<void>;
 }
 
 function errorMessage(error: unknown): string {
@@ -132,6 +133,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           ? { ...state.workspace, cards: [...state.workspace.cards, card] }
           : null
       }));
+    } catch (error) {
+      set({ error: errorMessage(error) });
+    }
+  },
+  renameCard: async (cardId, title) => {
+    try {
+      const workspace = await cardApi.rename(cardId, title);
+      set({ workspace });
     } catch (error) {
       set({ error: errorMessage(error) });
     }

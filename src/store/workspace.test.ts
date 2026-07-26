@@ -11,7 +11,7 @@ vi.mock("../lib/ipc", () => ({
   },
   modelApi: { list: vi.fn() },
   chatApi: { send: vi.fn(), cancel: vi.fn() },
-  cardApi: { create: vi.fn() }
+  cardApi: { create: vi.fn(), rename: vi.fn() }
 }));
 
 const workspace: ProjectWorkspace = {

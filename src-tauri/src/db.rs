@@ -310,6 +310,34 @@ impl Database {
         .await?;
         Ok(())
     }
+
+    pub async fn rename_card(
+        &self,
+        card_id: &str,
+        title: &str,
+    ) -> Result<ProjectWorkspace, sqlx::Error> {
+        let card = self.get_card(card_id).await?;
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("UPDATE cards SET title = ?, updated_at = ? WHERE id = ?")
+            .bind(title)
+            .bind(Utc::now().to_rfc3339())
+            .bind(card_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(
+            "WITH RECURSIVE descendants(id) AS (
+                SELECT id FROM cards WHERE parent_id = ?
+                UNION ALL
+                SELECT cards.id FROM cards JOIN descendants ON cards.parent_id = descendants.id
+             )
+             UPDATE cards SET context_stale = 1 WHERE id IN (SELECT id FROM descendants)",
+        )
+        .bind(card_id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        self.get_workspace(&card.project_id).await
+    }
 }
 
 #[cfg(test)]
@@ -449,5 +477,71 @@ mod tests {
             .await
             .expect("branch");
         assert_eq!(branch.branch_from_turn_id, Some(turn.id));
+    }
+
+    #[tokio::test]
+    async fn editing_card_marks_only_its_descendants_stale() {
+        let database = Database::in_memory().await.expect("database");
+        let workspace = database.create_project("Tree").await.expect("project");
+        let root = &workspace.cards[0];
+        let child = database
+            .create_card(&crate::models::CreateCardInput {
+                project_id: workspace.project.id.clone(),
+                source_card_id: root.id.clone(),
+                relation: "child".to_owned(),
+                title: "Child".to_owned(),
+                branch_from_turn_id: None,
+            })
+            .await
+            .expect("child");
+        let sibling = database
+            .create_card(&crate::models::CreateCardInput {
+                project_id: workspace.project.id.clone(),
+                source_card_id: root.id.clone(),
+                relation: "divergent".to_owned(),
+                title: "Sibling".to_owned(),
+                branch_from_turn_id: None,
+            })
+            .await
+            .expect("sibling");
+        let grandchild = database
+            .create_card(&crate::models::CreateCardInput {
+                project_id: workspace.project.id,
+                source_card_id: child.id.clone(),
+                relation: "child".to_owned(),
+                title: "Grandchild".to_owned(),
+                branch_from_turn_id: None,
+            })
+            .await
+            .expect("grandchild");
+
+        let updated = database
+            .rename_card(&child.id, "Edited child")
+            .await
+            .expect("rename");
+        assert!(
+            updated
+                .cards
+                .iter()
+                .find(|card| card.id == grandchild.id)
+                .expect("grandchild")
+                .context_stale
+        );
+        assert!(
+            !updated
+                .cards
+                .iter()
+                .find(|card| card.id == sibling.id)
+                .expect("sibling")
+                .context_stale
+        );
+        assert!(
+            !updated
+                .cards
+                .iter()
+                .find(|card| card.id == child.id)
+                .expect("child")
+                .context_stale
+        );
     }
 }

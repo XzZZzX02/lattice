@@ -13,7 +13,7 @@ export function App() {
   const {
     projects, workspace, loading, error, modelProfiles, activeModelProfileId,
     activeRequestId, activeCardId, loadProjects, createProject, selectProject, loadModels,
-    setActiveModel, sendMessage, cancelMessage, createCard, selectCard
+    setActiveModel, sendMessage, cancelMessage, createCard, selectCard, renameCard
   } = useWorkspaceStore();
   const [isCreating, setIsCreating] = useState(false);
   const [title, setTitle] = useState("");
@@ -110,7 +110,15 @@ export function App() {
             <div className="workspace-grid">
               <article className="conversation-card">
                 <div className="card-kicker">{activeCard?.relation.toUpperCase()} CARD</div>
-                <h2>{activeCard?.title}</h2>
+                <div className="card-title-row">
+                  <h2>{activeCard?.title}</h2>
+                  <button onClick={() => {
+                    if (!activeCard) return;
+                    const title = window.prompt("Card title", activeCard.title);
+                    if (title?.trim()) void renameCard(activeCard.id, title);
+                  }}>Rename</button>
+                </div>
+                {activeCard?.contextStale && <p className="stale-warning">Context changed upstream. Generate again to refresh this branch.</p>}
                 {turns.length === 0 && <div className="empty-card">
                   <BrainCircuit size={28} />
                   <p>Ask the first question to start this card.</p>

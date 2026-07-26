@@ -39,6 +39,22 @@ pub async fn create_card(
 }
 
 #[tauri::command]
+pub async fn rename_card(
+    database: State<'_, Database>,
+    card_id: String,
+    title: String,
+) -> Result<ProjectWorkspace, String> {
+    let title = title.trim();
+    if title.is_empty() || title.chars().count() > 240 {
+        return Err("Card title must contain 1–240 characters".to_owned());
+    }
+    database
+        .rename_card(&card_id, title)
+        .await
+        .map_err(|_| "Unable to rename card".to_owned())
+}
+
+#[tauri::command]
 pub async fn send_message(
     database: State<'_, Database>,
     requests: State<'_, RequestRegistry>,

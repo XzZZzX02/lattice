@@ -43,5 +43,7 @@ export const chatApi = {
 
 export const cardApi = {
   create: (input: CreateCardInput) =>
-    invoke<Card>("create_card", { input })
+    invoke<Card>("create_card", { input }),
+  rename: (cardId: string, title: string) =>
+    invoke<ProjectWorkspace>("rename_card", { cardId, title })
 };

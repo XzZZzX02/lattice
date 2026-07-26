@@ -34,6 +34,9 @@ button { color: inherit; }
 .conversation-card { align-self: center; max-height: calc(100vh - 190px); overflow: auto; border: 1px solid #343b36; border-radius: 24px; background: linear-gradient(145deg, #202522, #171b19); box-shadow: 0 28px 80px rgba(0,0,0,.34); padding: 32px; }
 .card-kicker { color: #68e98c; font-size: 10px; font-weight: 800; letter-spacing: .14em; }
 .conversation-card h2 { font-size: 26px; max-width: 620px; line-height: 1.2; }
+.card-title-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.card-title-row button { border: 0; background: transparent; color: #7f8982; }
+.stale-warning { padding: 10px 12px; border: 1px solid #6c5936; border-radius: 9px; background: #2c2518; color: #e7c27c; font-size: 12px; }
 .message { margin-top: 24px; line-height: 1.65; }
 .message.user { margin-left: auto; background: #353b37; border-radius: 14px 14px 4px 14px; padding: 12px 15px; width: max-content; max-width: 80%; }
 .message.assistant { color: #c8d0cb; }
