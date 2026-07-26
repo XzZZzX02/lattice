@@ -7,12 +7,13 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useWorkspaceStore } from "./store/workspace";
 import { ModelSettings } from "./components/ModelSettings";
+import { CardNavigator } from "./components/CardNavigator";
 
 export function App() {
   const {
     projects, workspace, loading, error, modelProfiles, activeModelProfileId,
     activeRequestId, activeCardId, loadProjects, createProject, selectProject, loadModels,
-    setActiveModel, sendMessage, cancelMessage, createCard
+    setActiveModel, sendMessage, cancelMessage, createCard, selectCard
   } = useWorkspaceStore();
   const [isCreating, setIsCreating] = useState(false);
   const [title, setTitle] = useState("");
@@ -139,10 +140,11 @@ export function App() {
                   <button disabled={turns.length === 0} onClick={() => addCard("branch")}><GitBranch size={15} /> Branch</button>
                 </footer>
               </article>
-              <aside className="navigator" aria-label="Card tree">
-                <p className="eyebrow">Card map</p>
-                <div className="tree"><button className="tree-node selected">{activeCard?.title}</button></div>
-              </aside>
+              <CardNavigator
+                cards={workspace.cards}
+                activeCardId={activeCardId}
+                onSelect={selectCard}
+              />
             </div>
             <form className="composer" onSubmit={submitMessage}>
               <select aria-label="Model" value={activeModelProfileId ?? ""} onChange={(e) => setActiveModel(e.target.value)}>
