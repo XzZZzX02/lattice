@@ -88,6 +88,8 @@ pub struct SendMessageInput {
     pub card_id: String,
     pub model_profile_id: String,
     pub content: String,
+    #[serde(default)]
+    pub quote_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -125,4 +127,54 @@ pub struct CreateCardInput {
     pub relation: String,
     pub title: String,
     pub branch_from_turn_id: Option<String>,
+    pub selected_text: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Quote {
+    pub id: String,
+    pub turn_id: String,
+    pub target_turn_id: Option<String>,
+    pub selected_text: String,
+    pub start_offset: i64,
+    pub end_offset: i64,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateQuoteInput {
+    pub turn_id: String,
+    pub selected_text: String,
+    pub start_offset: i64,
+    pub end_offset: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegeneratedTurn {
+    pub card: Card,
+    pub source_turn: Turn,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchResult {
+    pub entity_type: String,
+    pub entity_id: String,
+    pub project_id: String,
+    pub card_id: Option<String>,
+    pub title: String,
+    pub excerpt: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Favorite {
+    pub id: String,
+    pub project_id: String,
+    pub card_id: Option<String>,
+    pub turn_id: Option<String>,
+    pub created_at: String,
 }

@@ -4,8 +4,8 @@ use crate::{
     chat::RequestRegistry,
     db::Database,
     models::{
-        Card, CreateCardInput, ModelProfile, Project, ProjectWorkspace, SaveModelProfileInput,
-        SendMessageInput, StreamEvent, Turn,
+        Card, CreateCardInput, CreateQuoteInput, ModelProfile, Project, ProjectWorkspace, Quote,
+        RegeneratedTurn, SaveModelProfileInput, SearchResult, SendMessageInput, StreamEvent, Turn,
     },
     models_service,
 };
@@ -36,6 +36,126 @@ pub async fn create_card(
         .create_card(&input)
         .await
         .map_err(|_| "Unable to create card".to_owned())
+}
+
+#[tauri::command]
+pub async fn create_quote(
+    database: State<'_, Database>,
+    input: CreateQuoteInput,
+) -> Result<Quote, String> {
+    let length = input.selected_text.chars().count();
+    if length == 0
+        || length > 8_000
+        || input.start_offset < 0
+        || input.end_offset <= input.start_offset
+    {
+        return Err("Selected quote is invalid".to_owned());
+    }
+    database
+        .create_quote(&input)
+        .await
+        .map_err(|_| "Unable to save selected quote".to_owned())
+}
+
+#[tauri::command]
+pub async fn edit_turn(
+    database: State<'_, Database>,
+    turn_id: String,
+    user_content: String,
+) -> Result<ProjectWorkspace, String> {
+    let content = user_content.trim();
+    if content.is_empty() || content.chars().count() > 32_000 {
+        return Err("Message must contain 1–32,000 characters".to_owned());
+    }
+    database
+        .edit_turn(&turn_id, content)
+        .await
+        .map_err(|_| "Unable to edit message".to_owned())
+}
+
+#[tauri::command]
+pub async fn delete_turn(
+    database: State<'_, Database>,
+    turn_id: String,
+) -> Result<ProjectWorkspace, String> {
+    database
+        .delete_turn(&turn_id)
+        .await
+        .map_err(|_| "Unable to delete message".to_owned())
+}
+
+#[tauri::command]
+pub async fn regenerate_turn(
+    database: State<'_, Database>,
+    turn_id: String,
+) -> Result<RegeneratedTurn, String> {
+    let (card, source_turn) = database
+        .regenerate_turn(&turn_id)
+        .await
+        .map_err(|_| "Unable to create regeneration branch".to_owned())?;
+    Ok(RegeneratedTurn { card, source_turn })
+}
+
+#[tauri::command]
+pub async fn search(
+    database: State<'_, Database>,
+    query: String,
+    project_id: Option<String>,
+) -> Result<Vec<SearchResult>, String> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+    if query.chars().count() > 500 {
+        return Err("Search query is too long".to_owned());
+    }
+    database
+        .search(query, project_id.as_deref())
+        .await
+        .map_err(|_| "Unable to search local content".to_owned())
+}
+
+#[tauri::command]
+pub async fn toggle_turn_favorite(
+    database: State<'_, Database>,
+    project_id: String,
+    card_id: String,
+    turn_id: String,
+) -> Result<bool, String> {
+    database
+        .toggle_turn_favorite(&project_id, &card_id, &turn_id)
+        .await
+        .map_err(|_| "Unable to update favorite".to_owned())
+}
+
+#[tauri::command]
+pub async fn favorite_turn_ids(
+    database: State<'_, Database>,
+    project_id: String,
+) -> Result<Vec<String>, String> {
+    database
+        .favorite_turn_ids(&project_id)
+        .await
+        .map_err(|_| "Unable to load favorites".to_owned())
+}
+
+#[tauri::command]
+pub async fn export_project(
+    database: State<'_, Database>,
+    project_id: String,
+    format: String,
+    path: String,
+) -> Result<(), String> {
+    crate::backup::export_project(&database, &project_id, &format, std::path::Path::new(&path))
+        .await
+}
+
+#[tauri::command]
+pub async fn import_project(
+    database: State<'_, Database>,
+    path: String,
+) -> Result<ProjectWorkspace, String> {
+    crate::backup::import_project(&database, std::path::Path::new(&path)).await
 }
 
 #[tauri::command]

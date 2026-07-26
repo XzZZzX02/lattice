@@ -82,6 +82,7 @@ export interface SendMessageInput {
   cardId: string;
   modelProfileId: string;
   content: string;
+  quoteIds: string[];
 }
 
 export type StreamEvent =
@@ -97,4 +98,36 @@ export interface CreateCardInput {
   relation: Exclude<CardRelation, "root">;
   title: string;
   branchFromTurnId?: string;
+  selectedText?: string;
+}
+
+export interface Quote {
+  id: string;
+  turnId: string;
+  targetTurnId: string | null;
+  selectedText: string;
+  startOffset: number;
+  endOffset: number;
+  createdAt: string;
+}
+
+export interface CreateQuoteInput {
+  turnId: string;
+  selectedText: string;
+  startOffset: number;
+  endOffset: number;
+}
+
+export interface RegeneratedTurn {
+  card: Card;
+  sourceTurn: Turn;
+}
+
+export interface SearchResult {
+  entityType: "project" | "card" | "turn";
+  entityId: string;
+  projectId: string;
+  cardId: string | null;
+  title: string;
+  excerpt: string;
 }

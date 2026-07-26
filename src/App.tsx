@@ -1,24 +1,35 @@
 import { useEffect, useState } from "react";
 import {
-  BrainCircuit, FolderPlus, GitBranch, Library, Network, Plus, Settings2,
-  Square, Workflow
+  BrainCircuit, Download, FolderPlus, GitBranch, Library, Network, Plus,
+  Search, Settings2, Square, Star, Upload, Workflow
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useWorkspaceStore } from "./store/workspace";
 import { ModelSettings } from "./components/ModelSettings";
 import { CardNavigator } from "./components/CardNavigator";
+import { selectionFromContainer } from "./lib/selection";
 
 export function App() {
   const {
     projects, workspace, loading, error, modelProfiles, activeModelProfileId,
-    activeRequestId, activeCardId, loadProjects, createProject, selectProject, loadModels,
-    setActiveModel, sendMessage, cancelMessage, createCard, selectCard, renameCard
+    activeRequestId, activeCardId, pendingQuotes, loadProjects, createProject,
+    selectProject, loadModels, setActiveModel, sendMessage, cancelMessage,
+    createCard, selectCard, renameCard, addQuote, removeQuote, editTurn,
+    deleteTurn, regenerateTurn, search, searchResults, favoriteTurnIds,
+    toggleFavorite, exportProject, importProject
   } = useWorkspaceStore();
   const [isCreating, setIsCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [message, setMessage] = useState("");
+  const [selection, setSelection] = useState<{
+    turnId: string;
+    text: string;
+    startOffset: number;
+    endOffset: number;
+  } | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     void loadProjects();
@@ -44,7 +55,10 @@ export function App() {
     await sendMessage(activeCard.id, content);
   }
 
-  function addCard(relation: "child" | "divergent" | "branch") {
+  function addCard(
+    relation: "child" | "divergent" | "branch",
+    selectedText?: string
+  ) {
     if (!workspace || !activeCard) return;
     const lastTurn = turns.at(-1);
     if (relation === "branch" && !lastTurn) return;
@@ -53,8 +67,10 @@ export function App() {
       sourceCardId: activeCard.id,
       relation,
       title: relation === "child" ? "Deeper question" : relation === "divergent" ? "New direction" : "Alternative branch",
-      branchFromTurnId: relation === "branch" ? lastTurn?.id : undefined
+      branchFromTurnId: relation === "branch" ? lastTurn?.id : undefined,
+      selectedText
     });
+    setSelection(null);
   }
 
   return (
@@ -68,7 +84,25 @@ export function App() {
           <button onClick={() => setIsCreating(true)}><Plus size={17} /> New project</button>
           <button><FolderPlus size={17} /> New folder</button>
           <button><Library size={17} /> Import document</button>
+          <button onClick={() => void importProject()}><Upload size={17} /> Import project</button>
         </nav>
+        <form className="search-form" onSubmit={(event) => {
+          event.preventDefault();
+          void search(searchQuery);
+        }}>
+          <Search size={14} />
+          <input aria-label="Search workspace" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search local content" />
+        </form>
+        {searchResults.length > 0 && (
+          <div className="search-results">
+            {searchResults.map((result) => (
+              <button key={`${result.entityType}-${result.entityId}`} onClick={() => result.cardId && selectCard(result.cardId)}>
+                <strong>{result.title}</strong>
+                <span>{result.excerpt}</span>
+              </button>
+            ))}
+          </div>
+        )}
         {isCreating && (
           <form className="new-project-form" onSubmit={submitProject}>
             <input
@@ -105,7 +139,11 @@ export function App() {
           <>
             <header className="workspace-header">
               <div><p className="eyebrow">Current exploration</p><h1>{workspace.project.title}</h1></div>
-              <span className="local-pill">Local only</span>
+              <div className="workspace-tools">
+                <button onClick={() => void exportProject("json")} title="Export a restorable backup"><Download size={13} /> JSON</button>
+                <button onClick={() => void exportProject("markdown")} title="Export a readable copy"><Download size={13} /> Markdown</button>
+                <span className="local-pill">Local only</span>
+              </div>
             </header>
             <div className="workspace-grid">
               <article className="conversation-card">
@@ -126,7 +164,38 @@ export function App() {
                 {turns.map((turn) => (
                   <div className="turn" key={turn.id}>
                     <div className="message user">{turn.userContent}</div>
-                    <div className={`message assistant ${turn.status}`}>
+                    <div className="turn-menu">
+                      <button onClick={() => {
+                        const content = window.prompt("Edit message", turn.userContent);
+                        if (content?.trim()) void editTurn(turn.id, content);
+                      }}>Edit</button>
+                      <button onClick={() => void regenerateTurn(turn.id)}>Regenerate</button>
+                      <button
+                        aria-label={favoriteTurnIds.includes(turn.id) ? "Remove favorite" : "Favorite"}
+                        className={favoriteTurnIds.includes(turn.id) ? "favorited" : ""}
+                        onClick={() => void toggleFavorite(turn.id, turn.cardId)}
+                      ><Star size={11} fill="currentColor" /></button>
+                      <button onClick={() => {
+                        if (window.confirm("Delete this dialogue? Its previous value remains in the local revision log.")) {
+                          void deleteTurn(turn.id);
+                        }
+                      }}>Delete</button>
+                    </div>
+                    <div
+                      className={`message assistant ${turn.status}`}
+                      onMouseUp={(event) => {
+                        const selected = selectionFromContainer(
+                          event.currentTarget,
+                          turn.assistantContent,
+                          window.getSelection()
+                        );
+                        if (!selected) return;
+                        setSelection({
+                          turnId: turn.id,
+                          ...selected
+                        });
+                      }}
+                    >
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>
                         {turn.assistantContent || (turn.status === "streaming" ? "Thinking…" : "")}
                       </ReactMarkdown>
@@ -142,6 +211,23 @@ export function App() {
                     </div>
                   </div>
                 ))}
+                {selection && (
+                  <div className="selection-toolbar" role="toolbar" aria-label="Selected text actions">
+                    <span>“{selection.text.slice(0, 48)}{selection.text.length > 48 ? "…" : ""}”</span>
+                    <button onClick={() => {
+                      void addQuote({
+                        turnId: selection.turnId,
+                        selectedText: selection.text,
+                        startOffset: selection.startOffset,
+                        endOffset: selection.endOffset
+                      });
+                      setSelection(null);
+                    }}>Quote</button>
+                    <button onClick={() => addCard("child", selection.text)}>Child</button>
+                    <button onClick={() => addCard("divergent", selection.text)}>Divergent</button>
+                    <button onClick={() => void navigator.clipboard.writeText(selection.text)}>Copy</button>
+                  </div>
+                )}
                 <footer className="card-actions">
                   <button onClick={() => addCard("child")}><Workflow size={15} /> Child</button>
                   <button onClick={() => addCard("divergent")}><Network size={15} /> Divergent</button>
@@ -154,6 +240,15 @@ export function App() {
                 onSelect={selectCard}
               />
             </div>
+            {pendingQuotes.length > 0 && (
+              <div className="quote-tray">
+                {pendingQuotes.map((quote) => (
+                  <button key={quote.id} onClick={() => removeQuote(quote.id)} title="Remove quote">
+                    “{quote.selectedText.slice(0, 44)}”
+                  </button>
+                ))}
+              </div>
+            )}
             <form className="composer" onSubmit={submitMessage}>
               <select aria-label="Model" value={activeModelProfileId ?? ""} onChange={(e) => setActiveModel(e.target.value)}>
                 <option value="">Configure a model</option>

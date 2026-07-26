@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { cardApi, chatApi, modelApi, workspaceApi } from "../lib/ipc";
+import {
+  cardApi, chatApi, fileApi, knowledgeApi, modelApi, quoteApi, turnApi,
+  workspaceApi
+} from "../lib/ipc";
 import type { ProjectWorkspace } from "../types";
 import { useWorkspaceStore } from "./workspace";
 
@@ -11,7 +14,15 @@ vi.mock("../lib/ipc", () => ({
   },
   modelApi: { list: vi.fn() },
   chatApi: { send: vi.fn(), cancel: vi.fn() },
-  cardApi: { create: vi.fn(), rename: vi.fn() }
+  cardApi: { create: vi.fn(), rename: vi.fn() },
+  quoteApi: { create: vi.fn() },
+  turnApi: { edit: vi.fn(), delete: vi.fn(), regenerate: vi.fn() },
+  fileApi: { exportProject: vi.fn(), importProject: vi.fn() },
+  knowledgeApi: {
+    search: vi.fn(),
+    toggleFavorite: vi.fn(),
+    favoriteTurnIds: vi.fn().mockResolvedValue([])
+  }
 }));
 
 const workspace: ProjectWorkspace = {
@@ -58,6 +69,9 @@ describe("workspace store", () => {
       activeModelProfileId: null,
       activeRequestId: null
       ,activeCardId: null
+      ,pendingQuotes: []
+      ,favoriteTurnIds: [],
+      searchResults: []
     });
   });
 
@@ -131,6 +145,92 @@ describe("workspace store", () => {
     expect(useWorkspaceStore.getState().workspace?.cards[0].title).toBe("Renamed");
   });
 
+  it("adds and removes a traceable quote", async () => {
+    const quote = {
+      id: "q1",
+      turnId: "t1",
+      targetTurnId: null,
+      selectedText: "selected",
+      startOffset: 2,
+      endOffset: 10,
+      createdAt: ""
+    };
+    vi.mocked(quoteApi.create).mockResolvedValue(quote);
+
+    await useWorkspaceStore.getState().addQuote({
+      turnId: "t1",
+      selectedText: "selected",
+      startOffset: 2,
+      endOffset: 10
+    });
+    expect(useWorkspaceStore.getState().pendingQuotes).toEqual([quote]);
+
+    useWorkspaceStore.getState().removeQuote("q1");
+    expect(useWorkspaceStore.getState().pendingQuotes).toEqual([]);
+  });
+
+  it("edits, deletes, and regenerates without overwriting the source", async () => {
+    const sourceTurn = {
+      id: "t1", cardId: "card-1", userContent: "source",
+      assistantContent: "answer", modelProfileId: "m1", status: "completed" as const,
+      errorMessage: null, requestId: null, createdAt: "", updatedAt: ""
+    };
+    const withTurn = { ...workspace, turns: [sourceTurn] };
+    useWorkspaceStore.setState({
+      workspace: withTurn,
+      activeModelProfileId: "m1"
+    });
+    vi.mocked(turnApi.edit).mockResolvedValue({
+      ...withTurn,
+      turns: [{ ...sourceTurn, userContent: "edited", assistantContent: "", status: "idle" }]
+    });
+    await useWorkspaceStore.getState().editTurn("t1", "edited");
+    expect(useWorkspaceStore.getState().workspace?.turns[0].userContent).toBe("edited");
+
+    vi.mocked(turnApi.delete).mockResolvedValue({ ...workspace, turns: [] });
+    await useWorkspaceStore.getState().deleteTurn("t1");
+    expect(useWorkspaceStore.getState().workspace?.turns).toEqual([]);
+
+    const branch = {
+      ...workspace.cards[0],
+      id: "branch",
+      parentId: "card-1",
+      relation: "branch" as const,
+      branchFromTurnId: "t1"
+    };
+    vi.mocked(turnApi.regenerate).mockResolvedValue({ card: branch, sourceTurn });
+    vi.mocked(chatApi.send).mockResolvedValue(sourceTurn);
+    await useWorkspaceStore.getState().regenerateTurn("t1");
+    expect(useWorkspaceStore.getState().activeCardId).toBe("branch");
+    expect(chatApi.send).toHaveBeenCalledWith(
+      expect.objectContaining({ cardId: "branch", content: "source" }),
+      expect.any(Function)
+    );
+  });
+
+  it("searches locally and toggles favorites", async () => {
+    useWorkspaceStore.setState({ workspace });
+    const result = {
+      entityType: "turn" as const,
+      entityId: "t1",
+      projectId: "project-1",
+      cardId: "card-1",
+      title: "attention_map",
+      excerpt: "code"
+    };
+    vi.mocked(knowledgeApi.search).mockResolvedValue([result]);
+    await useWorkspaceStore.getState().search("attention_map");
+    expect(useWorkspaceStore.getState().searchResults).toEqual([result]);
+
+    vi.mocked(knowledgeApi.toggleFavorite).mockResolvedValue(true);
+    await useWorkspaceStore.getState().toggleFavorite("t1", "card-1");
+    expect(useWorkspaceStore.getState().favoriteTurnIds).toEqual(["t1"]);
+
+    vi.mocked(knowledgeApi.toggleFavorite).mockResolvedValue(false);
+    await useWorkspaceStore.getState().toggleFavorite("t1", "card-1");
+    expect(useWorkspaceStore.getState().favoriteTurnIds).toEqual([]);
+  });
+
   it("loads and selects the most recent project", async () => {
     vi.mocked(workspaceApi.listProjects).mockResolvedValue([workspace.project]);
     vi.mocked(workspaceApi.getWorkspace).mockResolvedValue(workspace);
@@ -139,6 +239,36 @@ describe("workspace store", () => {
 
     expect(useWorkspaceStore.getState().workspace).toEqual(workspace);
     expect(useWorkspaceStore.getState().loading).toBe(false);
+  });
+
+  it("exports and imports versioned project backups", async () => {
+    useWorkspaceStore.setState({ workspace, projects: [workspace.project] });
+    vi.mocked(fileApi.exportProject).mockResolvedValue(true);
+    expect(await useWorkspaceStore.getState().exportProject("json")).toBe(true);
+    expect(fileApi.exportProject).toHaveBeenCalledWith(
+      "project-1",
+      "Research",
+      "json"
+    );
+
+    const imported = {
+      ...workspace,
+      project: { ...workspace.project, id: "project-2", title: "Imported" },
+      cards: [{ ...workspace.cards[0], id: "card-2", projectId: "project-2" }]
+    };
+    vi.mocked(fileApi.importProject).mockResolvedValue(imported);
+    vi.mocked(knowledgeApi.favoriteTurnIds).mockResolvedValue(["turn-1"]);
+    expect(await useWorkspaceStore.getState().importProject()).toBe(true);
+    expect(useWorkspaceStore.getState().workspace).toEqual(imported);
+    expect(useWorkspaceStore.getState().projects[0].id).toBe("project-2");
+    expect(useWorkspaceStore.getState().favoriteTurnIds).toEqual(["turn-1"]);
+  });
+
+  it("leaves workspace unchanged when file dialogs are cancelled", async () => {
+    useWorkspaceStore.setState({ workspace });
+    vi.mocked(fileApi.importProject).mockResolvedValue(null);
+    expect(await useWorkspaceStore.getState().importProject()).toBe(false);
+    expect(useWorkspaceStore.getState().workspace).toEqual(workspace);
   });
 
   it("creates and prepends a project", async () => {

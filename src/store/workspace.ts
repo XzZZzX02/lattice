@@ -1,7 +1,12 @@
 import { create } from "zustand";
-import { cardApi, chatApi, modelApi, workspaceApi } from "../lib/ipc";
+import {
+  cardApi, chatApi, fileApi, knowledgeApi, modelApi, quoteApi, turnApi,
+  workspaceApi
+} from "../lib/ipc";
+import type { ExportFormat } from "../lib/ipc";
 import type {
-  CreateCardInput, ModelProfile, Project, ProjectWorkspace, StreamEvent, Turn
+  CreateCardInput, CreateQuoteInput, ModelProfile, Project, ProjectWorkspace,
+  Quote, SearchResult, StreamEvent, Turn
 } from "../types";
 
 interface WorkspaceState {
@@ -13,6 +18,9 @@ interface WorkspaceState {
   activeModelProfileId: string | null;
   activeRequestId: string | null;
   activeCardId: string | null;
+  pendingQuotes: Quote[];
+  favoriteTurnIds: string[];
+  searchResults: SearchResult[];
   loadProjects: () => Promise<void>;
   createProject: (title: string) => Promise<void>;
   selectProject: (projectId: string) => Promise<void>;
@@ -23,6 +31,15 @@ interface WorkspaceState {
   selectCard: (cardId: string) => void;
   createCard: (input: CreateCardInput) => Promise<void>;
   renameCard: (cardId: string, title: string) => Promise<void>;
+  addQuote: (input: CreateQuoteInput) => Promise<void>;
+  removeQuote: (quoteId: string) => void;
+  editTurn: (turnId: string, userContent: string) => Promise<void>;
+  deleteTurn: (turnId: string) => Promise<void>;
+  regenerateTurn: (turnId: string) => Promise<void>;
+  search: (query: string) => Promise<void>;
+  toggleFavorite: (turnId: string, cardId: string) => Promise<void>;
+  exportProject: (format: ExportFormat) => Promise<boolean>;
+  importProject: () => Promise<boolean>;
 }
 
 function errorMessage(error: unknown): string {
@@ -38,6 +55,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   activeModelProfileId: null,
   activeRequestId: null,
   activeCardId: null,
+  pendingQuotes: [],
+  favoriteTurnIds: [],
+  searchResults: [],
   loadProjects: async () => {
     set({ loading: true, error: null });
     try {
@@ -68,7 +88,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const workspace = await workspaceApi.getWorkspace(projectId);
-      set({ workspace, activeCardId: workspace.project.rootCardId, loading: false });
+      const favoriteTurnIds = await knowledgeApi.favoriteTurnIds(projectId);
+      set({
+        workspace,
+        favoriteTurnIds,
+        activeCardId: workspace.project.rootCardId,
+        loading: false
+      });
     } catch (error) {
       set({ loading: false, error: errorMessage(error) });
     }
@@ -109,7 +135,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       }));
     };
     try {
-      await chatApi.send({ cardId, modelProfileId, content }, handleEvent);
+      await chatApi.send(
+        {
+          cardId,
+          modelProfileId,
+          content,
+          quoteIds: get().pendingQuotes.map((quote) => quote.id)
+        },
+        handleEvent
+      );
+      set({ pendingQuotes: [] });
     } catch (error) {
       set({ activeRequestId: null, error: errorMessage(error) });
     }
@@ -143,6 +178,114 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       set({ workspace });
     } catch (error) {
       set({ error: errorMessage(error) });
+    }
+  },
+  addQuote: async (input) => {
+    try {
+      const quote = await quoteApi.create(input);
+      set((state) => ({ pendingQuotes: [...state.pendingQuotes, quote] }));
+    } catch (error) {
+      set({ error: errorMessage(error) });
+    }
+  },
+  removeQuote: (quoteId) =>
+    set((state) => ({
+      pendingQuotes: state.pendingQuotes.filter((quote) => quote.id !== quoteId)
+    })),
+  editTurn: async (turnId, userContent) => {
+    try {
+      const workspace = await turnApi.edit(turnId, userContent);
+      set({ workspace });
+    } catch (error) {
+      set({ error: errorMessage(error) });
+    }
+  },
+  deleteTurn: async (turnId) => {
+    try {
+      const workspace = await turnApi.delete(turnId);
+      set({ workspace });
+    } catch (error) {
+      set({ error: errorMessage(error) });
+    }
+  },
+  regenerateTurn: async (turnId) => {
+    try {
+      const regenerated = await turnApi.regenerate(turnId);
+      set((state) => ({
+        activeCardId: regenerated.card.id,
+        workspace: state.workspace
+          ? {
+              ...state.workspace,
+              cards: [...state.workspace.cards, regenerated.card]
+            }
+          : null
+      }));
+      await get().sendMessage(regenerated.card.id, regenerated.sourceTurn.userContent);
+    } catch (error) {
+      set({ error: errorMessage(error) });
+    }
+  },
+  search: async (query) => {
+    try {
+      const searchResults = await knowledgeApi.search(
+        query,
+        get().workspace?.project.id
+      );
+      set({ searchResults });
+    } catch (error) {
+      set({ error: errorMessage(error) });
+    }
+  },
+  toggleFavorite: async (turnId, cardId) => {
+    const projectId = get().workspace?.project.id;
+    if (!projectId) return;
+    try {
+      const favorited = await knowledgeApi.toggleFavorite(projectId, cardId, turnId);
+      set((state) => ({
+        favoriteTurnIds: favorited
+          ? [...state.favoriteTurnIds, turnId]
+          : state.favoriteTurnIds.filter((id) => id !== turnId)
+      }));
+    } catch (error) {
+      set({ error: errorMessage(error) });
+    }
+  },
+  exportProject: async (format) => {
+    const project = get().workspace?.project;
+    if (!project) return false;
+    try {
+      set({ error: null });
+      return await fileApi.exportProject(project.id, project.title, format);
+    } catch (error) {
+      set({ error: errorMessage(error) });
+      return false;
+    }
+  },
+  importProject: async () => {
+    try {
+      set({ loading: true, error: null });
+      const workspace = await fileApi.importProject();
+      if (!workspace) {
+        set({ loading: false });
+        return false;
+      }
+      const favoriteTurnIds = await knowledgeApi.favoriteTurnIds(
+        workspace.project.id
+      );
+      set((state) => ({
+        workspace,
+        favoriteTurnIds,
+        activeCardId: workspace.project.rootCardId,
+        projects: [
+          workspace.project,
+          ...state.projects.filter((project) => project.id !== workspace.project.id)
+        ],
+        loading: false
+      }));
+      return true;
+    } catch (error) {
+      set({ loading: false, error: errorMessage(error) });
+      return false;
     }
   }
 }));
