@@ -5,6 +5,8 @@ import type {
   CreateCardInput,
   CreateQuoteInput,
   ModelProfile,
+  DocumentImportResult,
+  LocalDocument,
   Project,
   ProjectWorkspace,
   Quote,
@@ -105,6 +107,25 @@ export const fileApi = {
     if (typeof path !== "string") return null;
     return invoke<ProjectWorkspace>("import_project", { path });
   }
+};
+
+export const documentApi = {
+  list: (projectId: string) =>
+    invoke<LocalDocument[]>("list_documents", { projectId }),
+  import: async (projectId: string) => {
+    const path = await open({
+      directory: false,
+      multiple: false,
+      filters: [{
+        name: "Local documents",
+        extensions: ["pdf", "md", "txt"]
+      }]
+    });
+    if (typeof path !== "string") return null;
+    return invoke<DocumentImportResult>("import_document", { projectId, path });
+  },
+  delete: (projectId: string, documentId: string) =>
+    invoke<void>("delete_document", { projectId, documentId })
 };
 
 function safeFilename(value: string): string {

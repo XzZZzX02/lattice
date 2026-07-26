@@ -20,6 +20,11 @@ vi.mock("./lib/ipc", () => ({
     exportProject: vi.fn().mockResolvedValue(false),
     importProject: vi.fn().mockResolvedValue(null)
   },
+  documentApi: {
+    list: vi.fn().mockResolvedValue([]),
+    import: vi.fn(),
+    delete: vi.fn()
+  },
   knowledgeApi: {
     search: vi.fn().mockResolvedValue([]),
     toggleFavorite: vi.fn(),

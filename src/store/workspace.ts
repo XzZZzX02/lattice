@@ -1,12 +1,12 @@
 import { create } from "zustand";
 import {
-  cardApi, chatApi, fileApi, knowledgeApi, modelApi, quoteApi, turnApi,
-  workspaceApi
+  cardApi, chatApi, documentApi, fileApi, knowledgeApi, modelApi, quoteApi,
+  turnApi, workspaceApi
 } from "../lib/ipc";
 import type { ExportFormat } from "../lib/ipc";
 import type {
-  CreateCardInput, CreateQuoteInput, ModelProfile, Project, ProjectWorkspace,
-  Quote, SearchResult, StreamEvent, Turn
+  CreateCardInput, CreateQuoteInput, LocalDocument, ModelProfile, Project,
+  ProjectWorkspace, Quote, SearchResult, StreamEvent, Turn
 } from "../types";
 
 interface WorkspaceState {
@@ -21,6 +21,7 @@ interface WorkspaceState {
   pendingQuotes: Quote[];
   favoriteTurnIds: string[];
   searchResults: SearchResult[];
+  documents: LocalDocument[];
   loadProjects: () => Promise<void>;
   createProject: (title: string) => Promise<void>;
   selectProject: (projectId: string) => Promise<void>;
@@ -40,6 +41,8 @@ interface WorkspaceState {
   toggleFavorite: (turnId: string, cardId: string) => Promise<void>;
   exportProject: (format: ExportFormat) => Promise<boolean>;
   importProject: () => Promise<boolean>;
+  importDocument: () => Promise<boolean>;
+  deleteDocument: (documentId: string) => Promise<void>;
 }
 
 function errorMessage(error: unknown): string {
@@ -58,6 +61,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   pendingQuotes: [],
   favoriteTurnIds: [],
   searchResults: [],
+  documents: [],
   loadProjects: async () => {
     set({ loading: true, error: null });
     try {
@@ -77,6 +81,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       set((state) => ({
         workspace,
         activeCardId: workspace.project.rootCardId,
+        documents: [],
         projects: [workspace.project, ...state.projects],
         loading: false
       }));
@@ -89,9 +94,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     try {
       const workspace = await workspaceApi.getWorkspace(projectId);
       const favoriteTurnIds = await knowledgeApi.favoriteTurnIds(projectId);
+      const documents = await documentApi.list(projectId);
       set({
         workspace,
         favoriteTurnIds,
+        documents,
         activeCardId: workspace.project.rootCardId,
         loading: false
       });
@@ -272,9 +279,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const favoriteTurnIds = await knowledgeApi.favoriteTurnIds(
         workspace.project.id
       );
+      const documents = await documentApi.list(workspace.project.id);
       set((state) => ({
         workspace,
         favoriteTurnIds,
+        documents,
         activeCardId: workspace.project.rootCardId,
         projects: [
           workspace.project,
@@ -286,6 +295,39 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     } catch (error) {
       set({ loading: false, error: errorMessage(error) });
       return false;
+    }
+  },
+  importDocument: async () => {
+    const projectId = get().workspace?.project.id;
+    if (!projectId) return false;
+    try {
+      const result = await documentApi.import(projectId);
+      if (!result) return false;
+      set((state) => ({
+        documents: state.documents.some(
+          (document) => document.id === result.document.id
+        )
+          ? state.documents
+          : [...state.documents, result.document]
+      }));
+      return true;
+    } catch (error) {
+      set({ error: errorMessage(error) });
+      return false;
+    }
+  },
+  deleteDocument: async (documentId) => {
+    const projectId = get().workspace?.project.id;
+    if (!projectId) return;
+    try {
+      await documentApi.delete(projectId, documentId);
+      set((state) => ({
+        documents: state.documents.filter(
+          (document) => document.id !== documentId
+        )
+      }));
+    } catch (error) {
+      set({ error: errorMessage(error) });
     }
   }
 }));

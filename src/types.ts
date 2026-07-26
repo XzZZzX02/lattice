@@ -131,3 +131,19 @@ export interface SearchResult {
   title: string;
   excerpt: string;
 }
+
+export interface LocalDocument {
+  id: string;
+  projectId: string;
+  name: string;
+  mimeType: string;
+  localPath: string;
+  contentHash: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface DocumentImportResult {
+  document: LocalDocument;
+  duplicate: boolean;
+}

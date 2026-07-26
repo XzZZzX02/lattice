@@ -5,8 +5,8 @@ use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use uuid::Uuid;
 
 use crate::models::{
-    Card, CreateCardInput, CreateQuoteInput, ModelProfile, Project, ProjectWorkspace, Quote,
-    SaveModelProfileInput, SearchResult, Turn,
+    Card, CreateCardInput, CreateQuoteInput, Document, ModelProfile, Project, ProjectWorkspace,
+    Quote, SaveModelProfileInput, SearchResult, Turn,
 };
 
 #[derive(Clone)]
@@ -548,7 +548,81 @@ impl Database {
         )
         .bind(project_id)
         .fetch_all(&self.pool)
-        .await
+            .await
+    }
+
+    pub async fn list_documents(&self, project_id: &str) -> Result<Vec<Document>, sqlx::Error> {
+        sqlx::query_as("SELECT * FROM documents WHERE project_id=? ORDER BY created_at")
+            .bind(project_id)
+            .fetch_all(&self.pool)
+            .await
+    }
+
+    pub async fn find_document_by_hash(
+        &self,
+        project_id: &str,
+        content_hash: &str,
+    ) -> Result<Option<Document>, sqlx::Error> {
+        sqlx::query_as("SELECT * FROM documents WHERE project_id=? AND content_hash=?")
+            .bind(project_id)
+            .bind(content_hash)
+            .fetch_optional(&self.pool)
+            .await
+    }
+
+    pub async fn get_document(
+        &self,
+        project_id: &str,
+        document_id: &str,
+    ) -> Result<Document, sqlx::Error> {
+        sqlx::query_as("SELECT * FROM documents WHERE project_id=? AND id=?")
+            .bind(project_id)
+            .bind(document_id)
+            .fetch_one(&self.pool)
+            .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn insert_document(
+        &self,
+        id: &str,
+        project_id: &str,
+        name: &str,
+        mime_type: &str,
+        local_path: &str,
+        content_hash: &str,
+    ) -> Result<Document, sqlx::Error> {
+        sqlx::query(
+            "INSERT INTO documents
+             (id,project_id,name,mime_type,local_path,content_hash,status,created_at)
+             VALUES (?,?,?,?,?,?,'ready',?)",
+        )
+        .bind(id)
+        .bind(project_id)
+        .bind(name)
+        .bind(mime_type)
+        .bind(local_path)
+        .bind(content_hash)
+        .bind(Utc::now().to_rfc3339())
+        .execute(&self.pool)
+        .await?;
+        self.get_document(project_id, id).await
+    }
+
+    pub async fn delete_document(
+        &self,
+        project_id: &str,
+        document_id: &str,
+    ) -> Result<(), sqlx::Error> {
+        let result = sqlx::query("DELETE FROM documents WHERE project_id=? AND id=?")
+            .bind(project_id)
+            .bind(document_id)
+            .execute(&self.pool)
+            .await?;
+        if result.rows_affected() != 1 {
+            return Err(sqlx::Error::RowNotFound);
+        }
+        Ok(())
     }
 }
 

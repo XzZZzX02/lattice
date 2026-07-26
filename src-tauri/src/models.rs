@@ -178,3 +178,23 @@ pub struct Favorite {
     pub turn_id: Option<String>,
     pub created_at: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Document {
+    pub id: String,
+    pub project_id: String,
+    pub name: String,
+    pub mime_type: String,
+    pub local_path: String,
+    pub content_hash: String,
+    pub status: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentImportResult {
+    pub document: Document,
+    pub duplicate: bool,
+}

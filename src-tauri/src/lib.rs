@@ -3,6 +3,7 @@ pub mod chat;
 pub mod commands;
 pub mod context;
 pub mod db;
+pub mod documents;
 pub mod models;
 pub mod models_service;
 
@@ -22,6 +23,7 @@ pub fn run() {
                 &data_dir.join("lattice.sqlite3"),
             ))?;
             app.manage(database);
+            app.manage(documents::DocumentStore::new(data_dir.join("documents"))?);
             app.manage(chat::RequestRegistry::default());
             Ok(())
         })
@@ -39,6 +41,9 @@ pub fn run() {
             commands::search,
             commands::toggle_turn_favorite,
             commands::favorite_turn_ids,
+            commands::list_documents,
+            commands::import_document,
+            commands::delete_document,
             commands::export_project,
             commands::import_project,
             commands::rename_card,

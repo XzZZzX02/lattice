@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   BrainCircuit, Download, FolderPlus, GitBranch, Library, Network, Plus,
-  Search, Settings2, Square, Star, Upload, Workflow
+  Search, Settings2, Square, Star, Trash2, Upload, Workflow
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -17,7 +17,8 @@ export function App() {
     selectProject, loadModels, setActiveModel, sendMessage, cancelMessage,
     createCard, selectCard, renameCard, addQuote, removeQuote, editTurn,
     deleteTurn, regenerateTurn, search, searchResults, favoriteTurnIds,
-    toggleFavorite, exportProject, importProject
+    toggleFavorite, exportProject, importProject, documents, importDocument,
+    deleteDocument
   } = useWorkspaceStore();
   const [isCreating, setIsCreating] = useState(false);
   const [title, setTitle] = useState("");
@@ -83,7 +84,7 @@ export function App() {
         <nav className="quick-actions" aria-label="Workspace actions">
           <button onClick={() => setIsCreating(true)}><Plus size={17} /> New project</button>
           <button><FolderPlus size={17} /> New folder</button>
-          <button><Library size={17} /> Import document</button>
+          <button disabled={!workspace} onClick={() => void importDocument()}><Library size={17} /> Import document</button>
           <button onClick={() => void importProject()}><Upload size={17} /> Import project</button>
         </nav>
         <form className="search-form" onSubmit={(event) => {
@@ -131,6 +132,25 @@ export function App() {
           ))}
           {!loading && projects.length === 0 && <p className="empty-copy">Create a project to begin exploring.</p>}
         </section>
+        {workspace && (
+          <section className="document-section">
+            <p className="eyebrow">Documents</p>
+            {documents.map((document) => (
+              <div className="document-row" key={document.id}>
+                <span title={document.name}>{document.name}</span>
+                <button
+                  aria-label={`Delete document ${document.name}`}
+                  onClick={() => {
+                    if (window.confirm(`Delete “${document.name}” from this project?`)) {
+                      void deleteDocument(document.id);
+                    }
+                  }}
+                ><Trash2 size={12} /></button>
+              </div>
+            ))}
+            {documents.length === 0 && <p className="empty-copy">No local documents.</p>}
+          </section>
+        )}
         <button className="settings" onClick={() => setSettingsOpen(true)}><Settings2 size={17} /> Settings</button>
       </aside>
       <section className="workspace">
