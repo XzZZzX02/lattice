@@ -21,7 +21,7 @@ import { selectionFromContainer } from "./lib/selection";
 export function App() {
   const {
     projects, workspace, loading, error, modelProfiles, activeModelProfileId,
-    activeRequestId, activeCardId, pendingQuotes, loadProjects, createProject,
+    activeRequestId, activeRequestCardId, activeCardId, pendingQuotes, loadProjects, createProject,
     selectProject, loadModels, setActiveModel, sendMessage, cancelMessage,
     createCard, createCardFromSelection, selectCard, renameCard, addQuote, removeQuote, editTurn,
     deleteTurn, regenerateTurn, search, searchResults, favoriteTurnIds,
@@ -83,7 +83,9 @@ export function App() {
     if (!activeCard || !message.trim() || activeRequestId) return;
     const content = message;
     setMessage("");
-    await sendMessage(activeCard.id, content);
+    await sendMessage(activeCard.id, content, {
+      quoteIds: pendingQuotes.map((quote) => quote.id)
+    });
   }
 
   function addCard(
@@ -325,7 +327,11 @@ export function App() {
                       {["failed", "cancelled", "interrupted"].includes(turn.status) && (
                         <button
                           className="retry-button"
-                          onClick={() => activeCard && void sendMessage(activeCard.id, turn.userContent)}
+                          onClick={() => activeCard && void sendMessage(
+                            activeCard.id,
+                            turn.userContent,
+                            { quoteIds: [] }
+                          )}
                         >
                           Retry
                         </button>
@@ -469,8 +475,11 @@ export function App() {
       }} />
       {linkedPreview && linkedCard && (
         <LinkedCardPreview
+          activeRequestCardId={activeRequestCardId}
           anchor={linkedPreview.anchor}
           card={linkedCard}
+          modelConfigured={activeModelProfileId !== null}
+          onCancel={() => void cancelMessage()}
           turns={linkedTurns}
           onDismiss={() => setLinkedPreview(null)}
           onOpenCard={(cardId) => {
@@ -478,6 +487,9 @@ export function App() {
             setLinkedPreview(null);
             setNavigatorMode("cards");
           }}
+          onSendMessage={(cardId, content) =>
+            sendMessage(cardId, content, { quoteIds: [] })
+          }
         />
       )}
       {activeCitation && (

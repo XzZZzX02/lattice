@@ -83,6 +83,7 @@ describe("workspace store", () => {
       ,modelProfiles: [],
       activeModelProfileId: null,
       activeRequestId: null
+      ,activeRequestCardId: null
       ,activeCardId: null
       ,pendingQuotes: []
       ,favoriteTurnIds: [],
@@ -117,20 +118,70 @@ describe("workspace store", () => {
       onEvent({ type: "completed", requestId: "r1", turn: { ...turn, assistantContent: "world", status: "completed" } });
       return { ...turn, assistantContent: "world", status: "completed" };
     });
-    await useWorkspaceStore.getState().sendMessage("card-1", "hello");
+    await useWorkspaceStore.getState().sendMessage("card-1", "hello", {
+      quoteIds: []
+    });
     expect(useWorkspaceStore.getState().workspace?.turns[0].assistantContent).toBe("world");
     expect(useWorkspaceStore.getState().activeRequestId).toBeNull();
+    expect(useWorkspaceStore.getState().activeRequestCardId).toBeNull();
   });
 
   it("cancels the active request and handles missing configuration", async () => {
     useWorkspaceStore.setState({ activeModelProfileId: null });
-    await useWorkspaceStore.getState().sendMessage("card-1", "hello");
+    await useWorkspaceStore.getState().sendMessage("card-1", "hello", {
+      quoteIds: []
+    });
     expect(useWorkspaceStore.getState().error).toContain("Configure");
 
     useWorkspaceStore.setState({ activeRequestId: "r1" });
     vi.mocked(chatApi.cancel).mockResolvedValue();
     await useWorkspaceStore.getState().cancelMessage();
     expect(chatApi.cancel).toHaveBeenCalledWith("r1");
+  });
+
+  it("sends only explicit quotes and ignores events after switching projects", async () => {
+    const otherWorkspace: ProjectWorkspace = {
+      ...workspace,
+      project: { ...workspace.project, id: "project-2", rootCardId: "other-card" },
+      cards: [{ ...workspace.cards[0], id: "other-card", projectId: "project-2" }]
+    };
+    const pendingQuote = {
+      id: "quote-1",
+      turnId: "source",
+      targetTurnId: null,
+      selectedText: "pending",
+      startOffset: 0,
+      endOffset: 7,
+      createdAt: ""
+    };
+    useWorkspaceStore.setState({
+      workspace,
+      activeModelProfileId: "m1",
+      pendingQuotes: [pendingQuote]
+    });
+    vi.mocked(chatApi.send).mockImplementation(async (input, onEvent) => {
+      expect(input.quoteIds).toEqual([]);
+      useWorkspaceStore.setState({ workspace: otherWorkspace });
+      const turn = {
+        id: "late-turn", cardId: "card-1", userContent: input.content,
+        assistantContent: "", modelProfileId: "m1", status: "streaming" as const,
+        errorMessage: null, requestId: "late-request", createdAt: "", updatedAt: ""
+      };
+      onEvent({ type: "started", requestId: "late-request", turn });
+      onEvent({
+        type: "completed",
+        requestId: "late-request",
+        turn: { ...turn, assistantContent: "late", status: "completed" }
+      });
+      return { ...turn, assistantContent: "late", status: "completed" };
+    });
+
+    await useWorkspaceStore.getState().sendMessage("card-1", "follow up", {
+      quoteIds: []
+    });
+
+    expect(useWorkspaceStore.getState().workspace).toEqual(otherWorkspace);
+    expect(useWorkspaceStore.getState().pendingQuotes).toEqual([pendingQuote]);
   });
 
   it("creates, selects, and renames cards", async () => {

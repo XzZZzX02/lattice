@@ -86,6 +86,10 @@ export interface SendMessageInput {
   quoteIds: string[];
 }
 
+export interface SendMessageOptions {
+  quoteIds: string[];
+}
+
 export type StreamEvent =
   | { type: "started"; requestId: string; turn: Turn }
   | { type: "delta"; requestId: string; turnId: string; delta: string }

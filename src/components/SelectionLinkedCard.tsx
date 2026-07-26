@@ -2,10 +2,12 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type ComponentPropsWithoutRef,
+  type FormEvent,
   type KeyboardEvent
 } from "react";
-import { ArrowUpRight, GitBranch, X } from "lucide-react";
+import { ArrowUpRight, GitBranch, Send, Square, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { SelectionAnchor } from "../lib/floating";
@@ -89,20 +91,38 @@ function LinkedMark({
 }
 
 export function LinkedCardPreview({
+  activeRequestCardId,
   anchor,
   card,
+  modelConfigured,
+  onCancel,
   turns,
   onDismiss,
-  onOpenCard
+  onOpenCard,
+  onSendMessage
 }: {
+  activeRequestCardId: string | null;
   anchor: SelectionAnchor;
   card: Card;
+  modelConfigured: boolean;
   turns: Turn[];
+  onCancel: () => void;
   onDismiss: () => void;
   onOpenCard: (cardId: string) => void;
+  onSendMessage: (cardId: string, content: string) => Promise<void> | void;
 }) {
   const previewRef = useRef<HTMLElement>(null);
+  const historyRef = useRef<HTMLDivElement>(null);
+  const [draft, setDraft] = useState("");
   const position = positionPreview(anchor);
+  const isGenerating = activeRequestCardId === card.id;
+  const anotherCardIsGenerating =
+    activeRequestCardId !== null && !isGenerating;
+
+  useEffect(() => {
+    const history = historyRef.current;
+    if (history) history.scrollTop = history.scrollHeight;
+  }, [turns]);
 
   useEffect(() => {
     function handleKeyDown(event: globalThis.KeyboardEvent) {
@@ -124,6 +144,20 @@ export function LinkedCardPreview({
     };
   }, [onDismiss]);
 
+  function submitFollowUp(event: FormEvent) {
+    event.preventDefault();
+    const content = draft.trim();
+    if (
+      !content
+      || !modelConfigured
+      || activeRequestCardId !== null
+    ) {
+      return;
+    }
+    setDraft("");
+    void onSendMessage(card.id, content);
+  }
+
   return (
     <aside
       ref={previewRef}
@@ -140,7 +174,7 @@ export function LinkedCardPreview({
           <X size={14} />
         </button>
       </header>
-      <div className="linked-card-history">
+      <div className="linked-card-history" ref={historyRef}>
         {turns.length === 0 && (
           <p className="linked-card-empty">No messages in this card yet.</p>
         )}
@@ -156,7 +190,53 @@ export function LinkedCardPreview({
         ))}
       </div>
       <footer>
+        <form className="linked-card-composer" onSubmit={submitFollowUp}>
+          <textarea
+            aria-label={`Follow up in ${card.title}`}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter"
+                && (event.metaKey || event.ctrlKey)
+              ) {
+                event.preventDefault();
+                event.currentTarget.form?.requestSubmit();
+              }
+            }}
+            placeholder="Ask a follow-up…"
+            rows={1}
+            value={draft}
+          />
+          {isGenerating ? (
+            <button
+              aria-label="Stop linked card response"
+              onClick={onCancel}
+              type="button"
+            >
+              <Square size={12} />
+            </button>
+          ) : (
+            <button
+              aria-label="Send linked card follow-up"
+              disabled={
+                !draft.trim()
+                || !modelConfigured
+                || anotherCardIsGenerating
+              }
+              type="submit"
+            >
+              <Send size={12} />
+            </button>
+          )}
+        </form>
+        {!modelConfigured && (
+          <small>Configure a model to follow up.</small>
+        )}
+        {anotherCardIsGenerating && (
+          <small>Another card is generating.</small>
+        )}
         <button
+          className="linked-card-open"
           aria-label={`Open card ${card.title}`}
           onClick={() => onOpenCard(card.id)}
         >

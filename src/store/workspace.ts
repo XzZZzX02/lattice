@@ -8,7 +8,8 @@ import type {
   CreateCardInput, CreateMindEdgeInput, CreateMindNodeInput, CreateQuoteInput,
   CreateSelectionCardInput,
   DocumentCitation, LocalDocument, MindscapeGraph, ModelProfile, Project,
-  MindSuggestionSet, ProjectWorkspace, Quote, SearchResult, StreamEvent, Turn
+  MindSuggestionSet, ProjectWorkspace, Quote, SearchResult, SendMessageOptions,
+  StreamEvent, Turn
 } from "../types";
 
 interface WorkspaceState {
@@ -19,6 +20,7 @@ interface WorkspaceState {
   modelProfiles: ModelProfile[];
   activeModelProfileId: string | null;
   activeRequestId: string | null;
+  activeRequestCardId: string | null;
   activeCardId: string | null;
   pendingQuotes: Quote[];
   favoriteTurnIds: string[];
@@ -33,7 +35,11 @@ interface WorkspaceState {
   selectProject: (projectId: string) => Promise<void>;
   loadModels: () => Promise<void>;
   setActiveModel: (profileId: string) => void;
-  sendMessage: (cardId: string, content: string) => Promise<void>;
+  sendMessage: (
+    cardId: string,
+    content: string,
+    options: SendMessageOptions
+  ) => Promise<void>;
   cancelMessage: () => Promise<void>;
   selectCard: (cardId: string) => void;
   createCard: (input: CreateCardInput) => Promise<void>;
@@ -76,6 +82,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   modelProfiles: [],
   activeModelProfileId: null,
   activeRequestId: null,
+  activeRequestCardId: null,
   activeCardId: null,
   pendingQuotes: [],
   favoriteTurnIds: [],
@@ -150,27 +157,48 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
   setActiveModel: (activeModelProfileId) => set({ activeModelProfileId }),
-  sendMessage: async (cardId, content) => {
-    const modelProfileId = get().activeModelProfileId;
+  sendMessage: async (cardId, content, options) => {
+    const initialState = get();
+    const modelProfileId = initialState.activeModelProfileId;
+    const projectId = initialState.workspace?.project.id;
     if (!modelProfileId) {
       set({ error: "Configure and select a model first" });
       return;
     }
+    if (
+      !projectId
+      || !initialState.workspace?.cards.some((card) => card.id === cardId)
+    ) {
+      set({ error: "The target card is not available in this project" });
+      return;
+    }
+    if (initialState.activeRequestId) {
+      set({ error: "Another response is already generating" });
+      return;
+    }
     set({ error: null });
     const handleEvent = (event: StreamEvent) => {
-      set((state) => ({
-        activeRequestId:
-          event.type === "started" || event.type === "delta"
-            ? event.requestId
-            : null,
-        workspace: state.workspace
-          ? {
-              ...state.workspace,
-              turns: reduceTurns(state.workspace.turns, event)
-            }
-          : null,
-        error: event.type === "failed" ? event.message : state.error
-      }));
+      const active = event.type === "started" || event.type === "delta";
+      set((state) => {
+        const currentWorkspace = state.workspace;
+        const workspaceMatches =
+          currentWorkspace?.project.id === projectId
+          && currentWorkspace.cards.some((card) => card.id === cardId);
+        return {
+          activeRequestId: active ? event.requestId : null,
+          activeRequestCardId: active ? cardId : null,
+          workspace: workspaceMatches
+            ? {
+                ...currentWorkspace,
+                turns: reduceTurns(currentWorkspace.turns, event)
+              }
+            : currentWorkspace,
+          error:
+            event.type === "failed" && workspaceMatches
+              ? event.message
+              : state.error
+        };
+      });
     };
     try {
       await chatApi.send(
@@ -178,18 +206,32 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           cardId,
           modelProfileId,
           content,
-          quoteIds: get().pendingQuotes.map((quote) => quote.id)
+          quoteIds: options.quoteIds
         },
         handleEvent
       );
-      const projectId = get().workspace?.project.id;
-      if (projectId) {
+      if (get().workspace?.project.id === projectId) {
         const documentCitations = await documentApi.citations(projectId);
-        set({ documentCitations });
+        set((state) =>
+          state.workspace?.project.id === projectId
+            ? {
+                documentCitations,
+                pendingQuotes: state.pendingQuotes.filter(
+                  (quote) => !options.quoteIds.includes(quote.id)
+                )
+              }
+            : {}
+        );
       }
-      set({ pendingQuotes: [] });
     } catch (error) {
-      set({ activeRequestId: null, error: errorMessage(error) });
+      set((state) => ({
+        activeRequestId: null,
+        activeRequestCardId: null,
+        error:
+          state.workspace?.project.id === projectId
+            ? errorMessage(error)
+            : state.error
+      }));
     }
   },
   cancelMessage: async () => {
@@ -287,7 +329,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
             }
           : null
       }));
-      await get().sendMessage(regenerated.card.id, regenerated.sourceTurn.userContent);
+      await get().sendMessage(
+        regenerated.card.id,
+        regenerated.sourceTurn.userContent,
+        { quoteIds: [] }
+      );
     } catch (error) {
       set({ error: errorMessage(error) });
     }

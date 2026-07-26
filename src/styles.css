@@ -87,8 +87,14 @@ button { color: inherit; }
 .linked-card-assistant > :first-child { margin-top: 0; }
 .linked-card-assistant > :last-child { margin-bottom: 0; }
 .linked-card-empty { margin: 28px 0; color: #717b74; text-align: center; font-size: 11px; }
-.linked-card-preview > footer { display: flex; justify-content: flex-end; padding: 10px 14px; border-top: 1px solid #2c342f; }
+.linked-card-preview > footer { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px; padding: 10px 14px; border-top: 1px solid #2c342f; }
 .linked-card-preview > footer button { display: flex; align-items: center; gap: 5px; border: 1px solid #43604c; border-radius: 8px; background: #1d2b21; color: #9bdbac; padding: 7px 9px; font-size: 10px; }
+.linked-card-preview > footer small { grid-column: 1 / -1; color: #a98569; font-size: 9px; }
+.linked-card-composer { min-width: 0; display: flex; align-items: center; gap: 5px; border: 1px solid #343e37; border-radius: 9px; background: #101411; padding: 4px; }
+.linked-card-composer textarea { min-width: 0; flex: 1; resize: none; border: 0; outline: 0; background: transparent; color: #dce3de; padding: 5px; font: inherit; font-size: 10px; }
+.linked-card-composer button { flex: 0 0 auto; width: 28px; height: 28px; justify-content: center; padding: 0 !important; }
+.linked-card-composer button:disabled { opacity: .35; }
+.linked-card-open { white-space: nowrap; }
 .retry-button { border: 1px solid #465048; border-radius: 8px; background: #252b27; padding: 7px 10px; color: #c9d2cc; }
 .card-actions { display: flex; justify-content: center; gap: 8px; position: sticky; bottom: -32px; margin: 30px -32px -32px; padding: 12px; background: rgba(21,25,22,.94); border-top: 1px solid #303632; }
 .card-actions button { display: flex; align-items: center; gap: 6px; border: 1px solid #3b443e; background: #242a26; border-radius: 9px; padding: 8px 10px; }
