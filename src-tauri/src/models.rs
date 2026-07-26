@@ -116,3 +116,13 @@ pub enum StreamEvent {
         message: String,
     },
 }
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateCardInput {
+    pub project_id: String,
+    pub source_card_id: String,
+    pub relation: String,
+    pub title: String,
+    pub branch_from_turn_id: Option<String>,
+}

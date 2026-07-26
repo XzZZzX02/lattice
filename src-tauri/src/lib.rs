@@ -1,5 +1,6 @@
 pub mod chat;
 pub mod commands;
+pub mod context;
 pub mod db;
 pub mod models;
 pub mod models_service;
@@ -29,6 +30,8 @@ pub fn run() {
             commands::get_workspace,
             commands::rename_project,
             commands::archive_project,
+            commands::create_card,
+            commands::rename_card,
             commands::list_model_profiles,
             commands::save_model_profile,
             commands::test_model_profile,

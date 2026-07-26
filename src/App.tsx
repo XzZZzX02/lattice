@@ -1,15 +1,19 @@
 import { useEffect, useState } from "react";
-import { BrainCircuit, FolderPlus, Library, Plus, Settings2, Square } from "lucide-react";
+import {
+  BrainCircuit, FolderPlus, GitBranch, Library, Network, Plus, Settings2,
+  Square, Workflow
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useWorkspaceStore } from "./store/workspace";
 import { ModelSettings } from "./components/ModelSettings";
+import { CardNavigator } from "./components/CardNavigator";
 
 export function App() {
   const {
     projects, workspace, loading, error, modelProfiles, activeModelProfileId,
-    activeRequestId, loadProjects, createProject, selectProject, loadModels,
-    setActiveModel, sendMessage, cancelMessage
+    activeRequestId, activeCardId, loadProjects, createProject, selectProject, loadModels,
+    setActiveModel, sendMessage, cancelMessage, createCard, selectCard, renameCard
   } = useWorkspaceStore();
   const [isCreating, setIsCreating] = useState(false);
   const [title, setTitle] = useState("");
@@ -29,9 +33,7 @@ export function App() {
     setIsCreating(false);
   }
 
-  const activeCard = workspace?.cards.find(
-    (card) => card.id === workspace.project.rootCardId
-  );
+  const activeCard = workspace?.cards.find((card) => card.id === activeCardId);
   const turns = workspace?.turns.filter((turn) => turn.cardId === activeCard?.id) ?? [];
 
   async function submitMessage(event: React.FormEvent) {
@@ -40,6 +42,19 @@ export function App() {
     const content = message;
     setMessage("");
     await sendMessage(activeCard.id, content);
+  }
+
+  function addCard(relation: "child" | "divergent" | "branch") {
+    if (!workspace || !activeCard) return;
+    const lastTurn = turns.at(-1);
+    if (relation === "branch" && !lastTurn) return;
+    void createCard({
+      projectId: workspace.project.id,
+      sourceCardId: activeCard.id,
+      relation,
+      title: relation === "child" ? "Deeper question" : relation === "divergent" ? "New direction" : "Alternative branch",
+      branchFromTurnId: relation === "branch" ? lastTurn?.id : undefined
+    });
   }
 
   return (
@@ -95,7 +110,15 @@ export function App() {
             <div className="workspace-grid">
               <article className="conversation-card">
                 <div className="card-kicker">{activeCard?.relation.toUpperCase()} CARD</div>
-                <h2>{activeCard?.title}</h2>
+                <div className="card-title-row">
+                  <h2>{activeCard?.title}</h2>
+                  <button onClick={() => {
+                    if (!activeCard) return;
+                    const title = window.prompt("Card title", activeCard.title);
+                    if (title?.trim()) void renameCard(activeCard.id, title);
+                  }}>Rename</button>
+                </div>
+                {activeCard?.contextStale && <p className="stale-warning">Context changed upstream. Generate again to refresh this branch.</p>}
                 {turns.length === 0 && <div className="empty-card">
                   <BrainCircuit size={28} />
                   <p>Ask the first question to start this card.</p>
@@ -119,11 +142,17 @@ export function App() {
                     </div>
                   </div>
                 ))}
+                <footer className="card-actions">
+                  <button onClick={() => addCard("child")}><Workflow size={15} /> Child</button>
+                  <button onClick={() => addCard("divergent")}><Network size={15} /> Divergent</button>
+                  <button disabled={turns.length === 0} onClick={() => addCard("branch")}><GitBranch size={15} /> Branch</button>
+                </footer>
               </article>
-              <aside className="navigator" aria-label="Card tree">
-                <p className="eyebrow">Card map</p>
-                <div className="tree"><button className="tree-node selected">{activeCard?.title}</button></div>
-              </aside>
+              <CardNavigator
+                cards={workspace.cards}
+                activeCardId={activeCardId}
+                onSelect={selectCard}
+              />
             </div>
             <form className="composer" onSubmit={submitMessage}>
               <select aria-label="Model" value={activeModelProfileId ?? ""} onChange={(e) => setActiveModel(e.target.value)}>

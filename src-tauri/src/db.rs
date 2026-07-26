@@ -4,7 +4,9 @@ use chrono::Utc;
 use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use uuid::Uuid;
 
-use crate::models::{Card, ModelProfile, Project, ProjectWorkspace, SaveModelProfileInput, Turn};
+use crate::models::{
+    Card, CreateCardInput, ModelProfile, Project, ProjectWorkspace, SaveModelProfileInput, Turn,
+};
 
 #[derive(Clone)]
 pub struct Database {
@@ -228,6 +230,114 @@ impl Database {
             .fetch_all(&self.pool)
             .await
     }
+
+    pub async fn create_card(&self, input: &CreateCardInput) -> Result<Card, sqlx::Error> {
+        let id = Uuid::now_v7().to_string();
+        let now = Utc::now().to_rfc3339();
+        let mut tx = self.pool.begin().await?;
+        let source: Card = sqlx::query_as("SELECT * FROM cards WHERE id = ? AND project_id = ?")
+            .bind(&input.source_card_id)
+            .bind(&input.project_id)
+            .fetch_one(&mut *tx)
+            .await?;
+        if let Some(turn_id) = &input.branch_from_turn_id {
+            sqlx::query("SELECT id FROM turns WHERE id = ? AND card_id = ?")
+                .bind(turn_id)
+                .bind(&source.id)
+                .fetch_one(&mut *tx)
+                .await?;
+        }
+        sqlx::query(
+            "INSERT INTO cards
+             (id,project_id,parent_id,relation,branch_from_turn_id,title,unread,position_x,position_y,created_at,updated_at)
+             VALUES (?,?,?,?,?,?,1,?,?,?,?)",
+        )
+        .bind(&id)
+        .bind(&input.project_id)
+        .bind(&source.id)
+        .bind(&input.relation)
+        .bind(&input.branch_from_turn_id)
+        .bind(&input.title)
+        .bind(source.position_x + if input.relation == "divergent" { 260.0 } else { 0.0 })
+        .bind(source.position_y + if input.relation == "child" { 180.0 } else { 120.0 })
+        .bind(&now)
+        .bind(&now)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        sqlx::query_as("SELECT * FROM cards WHERE id = ?")
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await
+    }
+
+    pub async fn get_card(&self, id: &str) -> Result<Card, sqlx::Error> {
+        sqlx::query_as("SELECT * FROM cards WHERE id = ?")
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await
+    }
+
+    pub async fn ancestor_chain(&self, card_id: &str) -> Result<Vec<Card>, sqlx::Error> {
+        sqlx::query_as(
+            "WITH RECURSIVE ancestors AS (
+                SELECT *, 0 AS level FROM cards WHERE id = ?
+                UNION ALL
+                SELECT cards.*, ancestors.level + 1
+                FROM cards JOIN ancestors ON cards.id = ancestors.parent_id
+             )
+             SELECT id,project_id,parent_id,relation,branch_from_turn_id,title,summary,
+                    context_snapshot_hash,context_stale,unread,position_x,position_y,created_at,updated_at
+             FROM ancestors ORDER BY level DESC",
+        )
+        .bind(card_id)
+        .fetch_all(&self.pool)
+        .await
+    }
+
+    pub async fn set_context_snapshot(
+        &self,
+        card_id: &str,
+        snapshot_hash: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "UPDATE cards SET context_snapshot_hash = ?, context_stale = 0, updated_at = ? WHERE id = ?",
+        )
+        .bind(snapshot_hash)
+        .bind(Utc::now().to_rfc3339())
+        .bind(card_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn rename_card(
+        &self,
+        card_id: &str,
+        title: &str,
+    ) -> Result<ProjectWorkspace, sqlx::Error> {
+        let card = self.get_card(card_id).await?;
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("UPDATE cards SET title = ?, updated_at = ? WHERE id = ?")
+            .bind(title)
+            .bind(Utc::now().to_rfc3339())
+            .bind(card_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(
+            "WITH RECURSIVE descendants(id) AS (
+                SELECT id FROM cards WHERE parent_id = ?
+                UNION ALL
+                SELECT cards.id FROM cards JOIN descendants ON cards.parent_id = descendants.id
+             )
+             UPDATE cards SET context_stale = 1 WHERE id IN (SELECT id FROM descendants)",
+        )
+        .bind(card_id)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        self.get_workspace(&card.project_id).await
+    }
 }
 
 #[cfg(test)]
@@ -330,6 +440,108 @@ mod tests {
         assert_eq!(
             reopened.get_turn(&turn.id).await.expect("recovered").status,
             "interrupted"
+        );
+    }
+
+    #[tokio::test]
+    async fn creates_all_hierarchical_card_relations() {
+        let database = Database::in_memory().await.expect("database");
+        let workspace = database.create_project("Tree").await.expect("project");
+        let root = &workspace.cards[0];
+        for relation in ["child", "divergent"] {
+            let card = database
+                .create_card(&crate::models::CreateCardInput {
+                    project_id: workspace.project.id.clone(),
+                    source_card_id: root.id.clone(),
+                    relation: relation.to_owned(),
+                    title: relation.to_owned(),
+                    branch_from_turn_id: None,
+                })
+                .await
+                .expect("card");
+            assert_eq!(card.parent_id.as_deref(), Some(root.id.as_str()));
+            assert_eq!(card.relation, relation);
+        }
+        let turn = database
+            .create_streaming_turn(&root.id, "prompt", "model", "request")
+            .await
+            .expect("turn");
+        let branch = database
+            .create_card(&crate::models::CreateCardInput {
+                project_id: workspace.project.id,
+                source_card_id: root.id.clone(),
+                relation: "branch".to_owned(),
+                title: "branch".to_owned(),
+                branch_from_turn_id: Some(turn.id.clone()),
+            })
+            .await
+            .expect("branch");
+        assert_eq!(branch.branch_from_turn_id, Some(turn.id));
+    }
+
+    #[tokio::test]
+    async fn editing_card_marks_only_its_descendants_stale() {
+        let database = Database::in_memory().await.expect("database");
+        let workspace = database.create_project("Tree").await.expect("project");
+        let root = &workspace.cards[0];
+        let child = database
+            .create_card(&crate::models::CreateCardInput {
+                project_id: workspace.project.id.clone(),
+                source_card_id: root.id.clone(),
+                relation: "child".to_owned(),
+                title: "Child".to_owned(),
+                branch_from_turn_id: None,
+            })
+            .await
+            .expect("child");
+        let sibling = database
+            .create_card(&crate::models::CreateCardInput {
+                project_id: workspace.project.id.clone(),
+                source_card_id: root.id.clone(),
+                relation: "divergent".to_owned(),
+                title: "Sibling".to_owned(),
+                branch_from_turn_id: None,
+            })
+            .await
+            .expect("sibling");
+        let grandchild = database
+            .create_card(&crate::models::CreateCardInput {
+                project_id: workspace.project.id,
+                source_card_id: child.id.clone(),
+                relation: "child".to_owned(),
+                title: "Grandchild".to_owned(),
+                branch_from_turn_id: None,
+            })
+            .await
+            .expect("grandchild");
+
+        let updated = database
+            .rename_card(&child.id, "Edited child")
+            .await
+            .expect("rename");
+        assert!(
+            updated
+                .cards
+                .iter()
+                .find(|card| card.id == grandchild.id)
+                .expect("grandchild")
+                .context_stale
+        );
+        assert!(
+            !updated
+                .cards
+                .iter()
+                .find(|card| card.id == sibling.id)
+                .expect("sibling")
+                .context_stale
+        );
+        assert!(
+            !updated
+                .cards
+                .iter()
+                .find(|card| card.id == child.id)
+                .expect("child")
+                .context_stale
         );
     }
 }

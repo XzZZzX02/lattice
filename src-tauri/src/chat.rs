@@ -85,7 +85,12 @@ async fn stream_response(
     token: &CancellationToken,
     on_event: &Channel<StreamEvent>,
 ) -> Result<Turn, String> {
-    let response = request_model(database, profile, turn).await;
+    let built_context = crate::context::build_context(database, &turn.card_id).await?;
+    database
+        .set_context_snapshot(&turn.card_id, &built_context.snapshot_hash)
+        .await
+        .map_err(|_| "Unable to save context snapshot".to_owned())?;
+    let response = request_model(profile, &built_context.messages).await;
     let response = match response {
         Ok(value) => value,
         Err(message) => {
@@ -149,21 +154,9 @@ async fn stream_response(
 }
 
 async fn request_model(
-    database: &Database,
     profile: &ModelProfile,
-    turn: &Turn,
+    messages: &[crate::context::ChatMessage],
 ) -> Result<Response, String> {
-    let history = database
-        .turns_for_card(&turn.card_id)
-        .await
-        .map_err(|_| "Unable to build conversation history".to_owned())?;
-    let mut messages = Vec::new();
-    for item in history {
-        messages.push(json!({"role": "user", "content": item.user_content}));
-        if !item.assistant_content.is_empty() {
-            messages.push(json!({"role": "assistant", "content": item.assistant_content}));
-        }
-    }
     let endpoint = if profile.provider == "ollama" {
         format!("{}/api/chat", profile.base_url)
     } else {

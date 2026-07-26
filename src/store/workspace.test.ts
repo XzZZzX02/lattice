@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { chatApi, modelApi, workspaceApi } from "../lib/ipc";
+import { cardApi, chatApi, modelApi, workspaceApi } from "../lib/ipc";
 import type { ProjectWorkspace } from "../types";
 import { useWorkspaceStore } from "./workspace";
 
@@ -10,7 +10,8 @@ vi.mock("../lib/ipc", () => ({
     getWorkspace: vi.fn()
   },
   modelApi: { list: vi.fn() },
-  chatApi: { send: vi.fn(), cancel: vi.fn() }
+  chatApi: { send: vi.fn(), cancel: vi.fn() },
+  cardApi: { create: vi.fn(), rename: vi.fn() }
 }));
 
 const workspace: ProjectWorkspace = {
@@ -56,6 +57,7 @@ describe("workspace store", () => {
       ,modelProfiles: [],
       activeModelProfileId: null,
       activeRequestId: null
+      ,activeCardId: null
     });
   });
 
@@ -95,6 +97,38 @@ describe("workspace store", () => {
     vi.mocked(chatApi.cancel).mockResolvedValue();
     await useWorkspaceStore.getState().cancelMessage();
     expect(chatApi.cancel).toHaveBeenCalledWith("r1");
+  });
+
+  it("creates, selects, and renames cards", async () => {
+    const child = {
+      ...workspace.cards[0],
+      id: "card-2",
+      parentId: "card-1",
+      relation: "child" as const,
+      title: "Child"
+    };
+    useWorkspaceStore.setState({ workspace });
+    vi.mocked(cardApi.create).mockResolvedValue(child);
+
+    await useWorkspaceStore.getState().createCard({
+      projectId: "project-1",
+      sourceCardId: "card-1",
+      relation: "child",
+      title: "Child"
+    });
+    expect(useWorkspaceStore.getState().activeCardId).toBe("card-2");
+    expect(useWorkspaceStore.getState().workspace?.cards).toHaveLength(2);
+
+    useWorkspaceStore.getState().selectCard("card-1");
+    expect(useWorkspaceStore.getState().activeCardId).toBe("card-1");
+
+    const renamed = {
+      ...workspace,
+      cards: [{ ...workspace.cards[0], title: "Renamed" }]
+    };
+    vi.mocked(cardApi.rename).mockResolvedValue(renamed);
+    await useWorkspaceStore.getState().renameCard("card-1", "Renamed");
+    expect(useWorkspaceStore.getState().workspace?.cards[0].title).toBe("Renamed");
   });
 
   it("loads and selects the most recent project", async () => {

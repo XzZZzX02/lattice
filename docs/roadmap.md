@@ -2,7 +2,7 @@
 
 - [x] Phase A — Foundation
 - [x] Phase B — Chat
-- [ ] Phase C — Branching
+- [x] Phase C — Branching
 - [ ] Phase D — Knowledge management
 - [ ] Phase E — Documents
 - [ ] Phase F — Mindscape

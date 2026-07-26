@@ -34,6 +34,9 @@ button { color: inherit; }
 .conversation-card { align-self: center; max-height: calc(100vh - 190px); overflow: auto; border: 1px solid #343b36; border-radius: 24px; background: linear-gradient(145deg, #202522, #171b19); box-shadow: 0 28px 80px rgba(0,0,0,.34); padding: 32px; }
 .card-kicker { color: #68e98c; font-size: 10px; font-weight: 800; letter-spacing: .14em; }
 .conversation-card h2 { font-size: 26px; max-width: 620px; line-height: 1.2; }
+.card-title-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.card-title-row button { border: 0; background: transparent; color: #7f8982; }
+.stale-warning { padding: 10px 12px; border: 1px solid #6c5936; border-radius: 9px; background: #2c2518; color: #e7c27c; font-size: 12px; }
 .message { margin-top: 24px; line-height: 1.65; }
 .message.user { margin-left: auto; background: #353b37; border-radius: 14px 14px 4px 14px; padding: 12px 15px; width: max-content; max-width: 80%; }
 .message.assistant { color: #c8d0cb; }
@@ -43,9 +46,17 @@ button { color: inherit; }
 .turn + .turn { border-top: 1px solid #303632; margin-top: 28px; padding-top: 4px; }
 .turn-error { color: #ff9999; font-size: 12px; }
 .retry-button { border: 1px solid #465048; border-radius: 8px; background: #252b27; padding: 7px 10px; color: #c9d2cc; }
+.card-actions { display: flex; justify-content: center; gap: 8px; position: sticky; bottom: -32px; margin: 30px -32px -32px; padding: 12px; background: rgba(21,25,22,.94); border-top: 1px solid #303632; }
+.card-actions button { display: flex; align-items: center; gap: 6px; border: 1px solid #3b443e; background: #242a26; border-radius: 9px; padding: 8px 10px; }
+.card-actions button:disabled { opacity: .35; }
 .empty-card { min-height: 250px; display: grid; place-items: center; align-content: center; color: #7b857e; }
 .empty-card p { margin: 10px 0; }
-.navigator { align-self: center; height: 380px; border-left: 1px solid #232824; padding-left: 22px; }
+.navigator { align-self: center; width: 100%; height: 460px; border-left: 1px solid #232824; padding-left: 22px; }
+.flow-map { height: 420px; border-radius: 15px; overflow: hidden; background: rgba(15,18,16,.55); }
+.map-node { width: 104px !important; padding: 8px !important; border: 1px solid !important; border-radius: 10px !important; background: #1c211e !important; color: #aeb8b1 !important; font-size: 10px !important; }
+.map-node.active { background: #67e88c !important; color: #07110a !important; font-weight: 750; }
+.react-flow__controls { background: #222824; border: 1px solid #343c36; box-shadow: none; }
+.react-flow__controls-button { background: #222824; border-color: #343c36; fill: #b5bdb7; }
 .tree { display: grid; justify-items: center; padding-top: 34px; }
 .tree-node { border: 1px solid #353d37; background: #181c19; border-radius: 999px; padding: 8px 12px; font-size: 11px; }
 .tree-node.selected { background: #65e889; color: #061008; border-color: #65e889; font-weight: 800; }

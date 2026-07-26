@@ -1,5 +1,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type {
+  Card,
+  CreateCardInput,
   ModelProfile,
   Project,
   ProjectWorkspace,
@@ -37,4 +39,11 @@ export const chatApi = {
   },
   cancel: (requestId: string) =>
     invoke<void>("cancel_message", { requestId })
+};
+
+export const cardApi = {
+  create: (input: CreateCardInput) =>
+    invoke<Card>("create_card", { input }),
+  rename: (cardId: string, title: string) =>
+    invoke<ProjectWorkspace>("rename_card", { cardId, title })
 };
