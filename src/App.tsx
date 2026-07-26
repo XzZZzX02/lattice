@@ -3,8 +3,6 @@ import {
   BrainCircuit, Download, FileText, FolderPlus, GitBranch, Library, Network,
   Plus, Search, Settings2, Square, Star, Trash2, Upload, Workflow, X
 } from "lucide-react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { useWorkspaceStore } from "./store/workspace";
 import { ModelSettings } from "./components/ModelSettings";
 import { CardNavigator } from "./components/CardNavigator";
@@ -13,6 +11,10 @@ import {
   QuoteChips,
   SelectionToolbar
 } from "./components/SelectionActions";
+import {
+  LinkedCardPreview,
+  LinkedMarkdown
+} from "./components/SelectionLinkedCard";
 import type { SelectionAnchor } from "./lib/floating";
 import { selectionFromContainer } from "./lib/selection";
 
@@ -46,6 +48,10 @@ export function App() {
     null as (typeof documentCitations)[number] | null
   );
   const [navigatorMode, setNavigatorMode] = useState<"cards" | "mindscape">("cards");
+  const [linkedPreview, setLinkedPreview] = useState<{
+    linkId: string;
+    anchor: SelectionAnchor;
+  } | null>(null);
 
   useEffect(() => {
     void loadProjects();
@@ -62,6 +68,15 @@ export function App() {
 
   const activeCard = workspace?.cards.find((card) => card.id === activeCardId);
   const turns = workspace?.turns.filter((turn) => turn.cardId === activeCard?.id) ?? [];
+  const activeSelectionLink = workspace?.selectionCardLinks.find(
+    (link) => link.id === linkedPreview?.linkId
+  );
+  const linkedCard = workspace?.cards.find(
+    (card) => card.id === activeSelectionLink?.targetCardId
+  );
+  const linkedTurns = workspace?.turns.filter(
+    (turn) => turn.cardId === linkedCard?.id
+  ) ?? [];
 
   async function submitMessage(event: React.FormEvent) {
     event.preventDefault();
@@ -295,9 +310,16 @@ export function App() {
                         });
                       }}
                     >
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {turn.assistantContent || (turn.status === "streaming" ? "Thinking…" : "")}
-                      </ReactMarkdown>
+                      <LinkedMarkdown
+                        content={turn.assistantContent || (turn.status === "streaming" ? "Thinking…" : "")}
+                        links={workspace.selectionCardLinks.filter(
+                          (link) => link.sourceTurnId === turn.id
+                        )}
+                        onOpenLink={(linkId, anchor) => {
+                          setSelection(null);
+                          setLinkedPreview({ linkId, anchor });
+                        }}
+                      />
                       {turn.errorMessage && <p className="turn-error">{turn.errorMessage}</p>}
                       {["failed", "cancelled", "interrupted"].includes(turn.status) && (
                         <button
@@ -444,6 +466,19 @@ export function App() {
         setSettingsOpen(open);
         if (!open) void loadModels();
       }} />
+      {linkedPreview && linkedCard && (
+        <LinkedCardPreview
+          anchor={linkedPreview.anchor}
+          card={linkedCard}
+          turns={linkedTurns}
+          onDismiss={() => setLinkedPreview(null)}
+          onOpenCard={(cardId) => {
+            selectCard(cardId);
+            setLinkedPreview(null);
+            setNavigatorMode("cards");
+          }}
+        />
+      )}
       {activeCitation && (
         <aside className="source-preview" aria-label="Document source">
           <header>

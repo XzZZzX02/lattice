@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
@@ -64,6 +64,8 @@ describe("App", () => {
       workspace: null,
       loading: false,
       error: null,
+      activeCardId: null,
+      pendingQuotes: [],
       documents: [],
       documentCitations: []
       ,mindscape: { nodes: [], edges: [], sources: [] }
@@ -135,5 +137,59 @@ describe("App", () => {
     expect(composer).toContainElement(screen.getByText("selected context"));
     await user.click(screen.getByRole("button", { name: "Remove quote selected context" }));
     expect(removeQuote).toHaveBeenCalledWith("quote-1");
+  });
+
+  it("opens linked card history from marked assistant text", async () => {
+    const user = userEvent.setup();
+    const linkedWorkspace: ProjectWorkspace = {
+      ...workspaceFixture,
+      cards: [
+        workspaceFixture.cards[0],
+        {
+          ...workspaceFixture.cards[0],
+          id: "c2",
+          parentId: "c1",
+          relation: "child",
+          title: "beta"
+        }
+      ],
+      turns: [
+        {
+          id: "t1", cardId: "c1", userContent: "Explain",
+          assistantContent: "Alpha **beta** gamma", modelProfileId: "m1",
+          status: "completed", errorMessage: null, requestId: null,
+          createdAt: "", updatedAt: ""
+        },
+        {
+          id: "t2", cardId: "c2", userContent: "Why beta?",
+          assistantContent: "Linked history", modelProfileId: "m1",
+          status: "completed", errorMessage: null, requestId: null,
+          createdAt: "", updatedAt: ""
+        }
+      ],
+      selectionCardLinks: [{
+        id: "link-1",
+        sourceTurnId: "t1",
+        targetCardId: "c2",
+        selectedText: "beta",
+        startOffset: 6,
+        endOffset: 10,
+        createdAt: ""
+      }]
+    };
+    useWorkspaceStore.setState({
+      projects: [linkedWorkspace.project],
+      workspace: linkedWorkspace,
+      activeCardId: "c1"
+    });
+
+    render(<App />);
+    window.getSelection()?.removeAllRanges();
+    fireEvent.click(screen.getByRole("button", { name: "Open linked card for beta" }));
+
+    expect(screen.getByRole("complementary", { name: "Linked card beta" })).toBeInTheDocument();
+    expect(screen.getByText("Linked history")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Open card beta" }));
+    expect(useWorkspaceStore.getState().activeCardId).toBe("c2");
   });
 });
