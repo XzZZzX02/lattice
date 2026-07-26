@@ -270,6 +270,46 @@ impl Database {
             .fetch_one(&self.pool)
             .await
     }
+
+    pub async fn get_card(&self, id: &str) -> Result<Card, sqlx::Error> {
+        sqlx::query_as("SELECT * FROM cards WHERE id = ?")
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await
+    }
+
+    pub async fn ancestor_chain(&self, card_id: &str) -> Result<Vec<Card>, sqlx::Error> {
+        sqlx::query_as(
+            "WITH RECURSIVE ancestors AS (
+                SELECT *, 0 AS level FROM cards WHERE id = ?
+                UNION ALL
+                SELECT cards.*, ancestors.level + 1
+                FROM cards JOIN ancestors ON cards.id = ancestors.parent_id
+             )
+             SELECT id,project_id,parent_id,relation,branch_from_turn_id,title,summary,
+                    context_snapshot_hash,context_stale,unread,position_x,position_y,created_at,updated_at
+             FROM ancestors ORDER BY level DESC",
+        )
+        .bind(card_id)
+        .fetch_all(&self.pool)
+        .await
+    }
+
+    pub async fn set_context_snapshot(
+        &self,
+        card_id: &str,
+        snapshot_hash: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "UPDATE cards SET context_snapshot_hash = ?, context_stale = 0, updated_at = ? WHERE id = ?",
+        )
+        .bind(snapshot_hash)
+        .bind(Utc::now().to_rfc3339())
+        .bind(card_id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
