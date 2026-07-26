@@ -147,3 +147,13 @@ export interface DocumentImportResult {
   document: LocalDocument;
   duplicate: boolean;
 }
+
+export interface DocumentChunk {
+  id: string;
+  documentId: string;
+  content: string;
+  pageNumber: number | null;
+  headingPath: string;
+  startOffset: number;
+  endOffset: number;
+}

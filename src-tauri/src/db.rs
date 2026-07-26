@@ -5,8 +5,8 @@ use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use uuid::Uuid;
 
 use crate::models::{
-    Card, CreateCardInput, CreateQuoteInput, Document, ModelProfile, Project, ProjectWorkspace,
-    Quote, SaveModelProfileInput, SearchResult, Turn,
+    Card, CreateCardInput, CreateQuoteInput, Document, DocumentChunk, ModelProfile, Project,
+    ProjectWorkspace, Quote, SaveModelProfileInput, SearchResult, Turn,
 };
 
 #[derive(Clone)]
@@ -595,7 +595,7 @@ impl Database {
         sqlx::query(
             "INSERT INTO documents
              (id,project_id,name,mime_type,local_path,content_hash,status,created_at)
-             VALUES (?,?,?,?,?,?,'ready',?)",
+             VALUES (?,?,?,?,?,?,'processing',?)",
         )
         .bind(id)
         .bind(project_id)
@@ -622,6 +622,75 @@ impl Database {
         if result.rows_affected() != 1 {
             return Err(sqlx::Error::RowNotFound);
         }
+        Ok(())
+    }
+
+    pub async fn list_document_chunks(
+        &self,
+        project_id: &str,
+        document_id: &str,
+    ) -> Result<Vec<DocumentChunk>, sqlx::Error> {
+        sqlx::query_as(
+            "SELECT document_chunks.* FROM document_chunks
+             JOIN documents ON documents.id=document_chunks.document_id
+             WHERE documents.project_id=? AND documents.id=?
+             ORDER BY COALESCE(page_number,0),start_offset",
+        )
+        .bind(project_id)
+        .bind(document_id)
+        .fetch_all(&self.pool)
+        .await
+    }
+
+    pub async fn replace_document_chunks(
+        &self,
+        document: &Document,
+        chunks: &[crate::documents::ChunkDraft],
+    ) -> Result<Document, sqlx::Error> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query("DELETE FROM document_chunks WHERE document_id=?")
+            .bind(&document.id)
+            .execute(&mut *tx)
+            .await?;
+        for chunk in chunks {
+            let heading_path = serde_json::to_string(&chunk.heading_path)
+                .map_err(|error| sqlx::Error::Encode(Box::new(error)))?;
+            sqlx::query(
+                "INSERT INTO document_chunks
+                 (id,document_id,content,page_number,heading_path,start_offset,end_offset)
+                 VALUES (?,?,?,?,?,?,?)",
+            )
+            .bind(Uuid::now_v7().to_string())
+            .bind(&document.id)
+            .bind(&chunk.content)
+            .bind(chunk.page_number)
+            .bind(heading_path)
+            .bind(chunk.start_offset)
+            .bind(chunk.end_offset)
+            .execute(&mut *tx)
+            .await?;
+        }
+        sqlx::query("UPDATE documents SET status='ready' WHERE id=? AND project_id=?")
+            .bind(&document.id)
+            .bind(&document.project_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        self.get_document(&document.project_id, &document.id).await
+    }
+
+    pub async fn set_document_status(
+        &self,
+        project_id: &str,
+        document_id: &str,
+        status: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE documents SET status=? WHERE id=? AND project_id=?")
+            .bind(status)
+            .bind(document_id)
+            .bind(project_id)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 }

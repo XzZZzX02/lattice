@@ -42,6 +42,7 @@ pub fn run() {
             commands::toggle_turn_favorite,
             commands::favorite_turn_ids,
             commands::list_documents,
+            commands::list_document_chunks,
             commands::import_document,
             commands::delete_document,
             commands::export_project,

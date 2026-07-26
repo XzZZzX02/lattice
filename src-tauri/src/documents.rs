@@ -3,9 +3,23 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::{db::Database, models::DocumentImportResult};
+use crate::{
+    db::Database,
+    models::{Document, DocumentImportResult},
+};
 
 const MAX_DOCUMENT_BYTES: u64 = 100 * 1024 * 1024;
+const MAX_CHUNK_CHARS: usize = 3_200;
+const CHUNK_OVERLAP_CHARS: usize = 400;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChunkDraft {
+    pub content: String,
+    pub page_number: Option<i64>,
+    pub heading_path: Vec<String>,
+    pub start_offset: i64,
+    pub end_offset: i64,
+}
 
 #[derive(Clone)]
 pub struct DocumentStore {
@@ -69,10 +83,18 @@ impl DocumentStore {
             )
             .await
         {
-            Ok(document) => Ok(DocumentImportResult {
-                document,
-                duplicate: false,
-            }),
+            Ok(document) => match process_document(database, &document).await {
+                Ok(document) => Ok(DocumentImportResult {
+                    document,
+                    duplicate: false,
+                }),
+                Err(message) => {
+                    let _ = database
+                        .set_document_status(project_id, &document.id, "failed")
+                        .await;
+                    Err(message)
+                }
+            },
             Err(_) => {
                 let _ = std::fs::remove_file(&destination);
                 if let Some(document) = database
@@ -126,6 +148,143 @@ impl DocumentStore {
         }
         Ok(())
     }
+}
+
+async fn process_document(database: &Database, document: &Document) -> Result<Document, String> {
+    let path = PathBuf::from(&document.local_path);
+    let mime_type = document.mime_type.clone();
+    let pages = tauri::async_runtime::spawn_blocking(move || extract_pages(&path, &mime_type))
+        .await
+        .map_err(|_| "Document processing was interrupted".to_owned())??;
+    let chunks = structured_chunks(pages, document.mime_type == "text/markdown");
+    if chunks.is_empty() {
+        return Err("Document did not produce any searchable text".to_owned());
+    }
+    database
+        .replace_document_chunks(document, &chunks)
+        .await
+        .map_err(|_| "Unable to store document chunks".to_owned())
+}
+
+fn extract_pages(path: &Path, mime_type: &str) -> Result<Vec<(Option<i64>, String)>, String> {
+    if mime_type == "application/pdf" {
+        return pdf_extract::extract_text_by_pages(path)
+            .map_err(|_| "Unable to extract PDF pages".to_owned())
+            .map(|pages| {
+                pages
+                    .into_iter()
+                    .enumerate()
+                    .map(|(index, page)| (Some(index as i64 + 1), page))
+                    .collect()
+            });
+    }
+    let text =
+        std::fs::read_to_string(path).map_err(|_| "Unable to read text document".to_owned())?;
+    Ok(vec![(None, text)])
+}
+
+fn structured_chunks(pages: Vec<(Option<i64>, String)>, markdown: bool) -> Vec<ChunkDraft> {
+    let mut chunks = Vec::new();
+    for (page_number, text) in pages {
+        let mut heading_path = Vec::<String>::new();
+        let mut paragraph = String::new();
+        let mut paragraph_start = 0usize;
+        let mut offset = 0usize;
+        for line in text.split_inclusive('\n') {
+            let line_length = line.chars().count();
+            let trimmed = line.trim();
+            if markdown {
+                if let Some((depth, heading)) = markdown_heading(trimmed) {
+                    flush_paragraph(
+                        &mut chunks,
+                        &mut paragraph,
+                        page_number,
+                        &heading_path,
+                        paragraph_start,
+                        offset,
+                    );
+                    heading_path.truncate(depth.saturating_sub(1));
+                    heading_path.push(heading.to_owned());
+                    offset += line_length;
+                    continue;
+                }
+            }
+            if trimmed.is_empty() {
+                flush_paragraph(
+                    &mut chunks,
+                    &mut paragraph,
+                    page_number,
+                    &heading_path,
+                    paragraph_start,
+                    offset,
+                );
+            } else {
+                if paragraph.is_empty() {
+                    paragraph_start = offset;
+                }
+                paragraph.push_str(line);
+            }
+            offset += line_length;
+        }
+        flush_paragraph(
+            &mut chunks,
+            &mut paragraph,
+            page_number,
+            &heading_path,
+            paragraph_start,
+            text.chars().count(),
+        );
+    }
+    chunks
+}
+
+fn markdown_heading(line: &str) -> Option<(usize, &str)> {
+    let depth = line
+        .chars()
+        .take_while(|character| *character == '#')
+        .count();
+    if !(1..=6).contains(&depth) {
+        return None;
+    }
+    line.get(depth..)
+        .map(str::trim)
+        .filter(|heading| !heading.is_empty())
+        .map(|heading| (depth, heading))
+}
+
+fn flush_paragraph(
+    chunks: &mut Vec<ChunkDraft>,
+    paragraph: &mut String,
+    page_number: Option<i64>,
+    heading_path: &[String],
+    start_offset: usize,
+    end_offset: usize,
+) {
+    if paragraph.trim().is_empty() {
+        paragraph.clear();
+        return;
+    }
+    let characters = paragraph.chars().collect::<Vec<_>>();
+    let mut start = 0usize;
+    while start < characters.len() {
+        let end = (start + MAX_CHUNK_CHARS).min(characters.len());
+        chunks.push(ChunkDraft {
+            content: characters[start..end].iter().collect(),
+            page_number,
+            heading_path: heading_path.to_vec(),
+            start_offset: (start_offset + start) as i64,
+            end_offset: if end == characters.len() {
+                (start_offset + characters.len()).min(end_offset) as i64
+            } else {
+                (start_offset + end) as i64
+            },
+        });
+        if end == characters.len() {
+            break;
+        }
+        start = end.saturating_sub(CHUNK_OVERLAP_CHARS);
+    }
+    paragraph.clear();
 }
 
 struct ValidatedSource {
@@ -210,6 +369,18 @@ mod tests {
             .expect("import");
         assert!(!imported.duplicate);
         assert!(Path::new(&imported.document.local_path).exists());
+        let chunks = database
+            .list_document_chunks(&workspace.project.id, &imported.document.id)
+            .await
+            .expect("chunks");
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(
+            serde_json::from_str::<Vec<String>>(&chunks[0].heading_path).expect("heading path"),
+            vec!["Heading"]
+        );
+        assert_eq!(chunks[0].content, "Local knowledge.");
+        assert_eq!(chunks[0].start_offset, 11);
+        assert_eq!(chunks[0].end_offset, 27);
 
         let duplicate = store
             .ingest(&database, &workspace.project.id, &source)
@@ -270,6 +441,11 @@ mod tests {
             .await
             .expect("PDF import");
         assert_eq!(imported.document.mime_type, "application/pdf");
+        let chunks = database
+            .list_document_chunks(&workspace.project.id, &imported.document.id)
+            .await
+            .expect("PDF chunks");
+        assert_eq!(chunks[0].page_number, Some(1));
     }
 
     fn write_text_pdf(path: &Path) {
@@ -317,6 +493,17 @@ mod tests {
         document.trailer.set("Root", catalog_id);
         document.compress();
         document.save(path).expect("save PDF");
+    }
+
+    #[test]
+    fn long_paragraphs_overlap_and_preserve_source_ranges() {
+        let content = "a".repeat(4_000);
+        let chunks = super::structured_chunks(vec![(None, content)], false);
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].start_offset, 0);
+        assert_eq!(chunks[0].end_offset, 3_200);
+        assert_eq!(chunks[1].start_offset, 2_800);
+        assert_eq!(chunks[1].end_offset, 4_000);
     }
 
     use std::path::Path;

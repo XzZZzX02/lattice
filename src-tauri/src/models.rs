@@ -198,3 +198,15 @@ pub struct DocumentImportResult {
     pub document: Document,
     pub duplicate: bool,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentChunk {
+    pub id: String,
+    pub document_id: String,
+    pub content: String,
+    pub page_number: Option<i64>,
+    pub heading_path: String,
+    pub start_offset: i64,
+    pub end_offset: i64,
+}
