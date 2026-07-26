@@ -1606,5 +1606,19 @@ mod tests {
             })
             .await
             .is_err());
+        sqlx::query("DELETE FROM projects WHERE id=?")
+            .bind(&workspace.project.id)
+            .execute(database.pool())
+            .await
+            .expect("project cascade");
+        let remaining_sources: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM mind_node_sources WHERE mind_node_id IN (?,?)",
+        )
+        .bind(card_node.id)
+        .bind(turn_node.id)
+        .fetch_one(database.pool())
+        .await
+        .expect("remaining sources");
+        assert_eq!(remaining_sources, 0);
     }
 }

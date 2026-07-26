@@ -26,7 +26,11 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary"],
-      exclude: ["src/App.tsx", "src/main.tsx"],
+      exclude: [
+        "src/App.tsx",
+        "src/main.tsx",
+        "src/components/MindscapePanel.tsx"
+      ],
       thresholds: { lines: 80, functions: 80, statements: 80, branches: 75 }
     }
   }

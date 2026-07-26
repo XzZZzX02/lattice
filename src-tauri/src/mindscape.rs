@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
+use chrono::Utc;
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -8,8 +9,8 @@ use uuid::Uuid;
 use crate::{
     db::Database,
     models::{
-        ApplyMindSuggestionsInput, ConceptSuggestion, CreateMindEdgeInput, CreateMindNodeInput,
-        MergeSuggestion, MindSuggestionSet, MindscapeGraph, ModelProfile, RelationSuggestion,
+        ApplyMindSuggestionsInput, ConceptSuggestion, MergeSuggestion, MindSuggestionSet,
+        MindscapeGraph, ModelProfile, RelationSuggestion,
     },
     models_service,
 };
@@ -28,7 +29,51 @@ pub async fn apply(
             .await
             .map_err(|_| "Unable to load Mindscape".to_owned());
     }
+    let known_suggestion_ids = input
+        .suggestions
+        .concepts
+        .iter()
+        .map(|suggestion| suggestion.id.as_str())
+        .chain(
+            input
+                .suggestions
+                .relations
+                .iter()
+                .map(|suggestion| suggestion.id.as_str()),
+        )
+        .chain(
+            input
+                .suggestions
+                .merges
+                .iter()
+                .map(|suggestion| suggestion.id.as_str()),
+        )
+        .collect::<HashSet<_>>();
+    if accepted
+        .iter()
+        .any(|id| !known_suggestion_ids.contains(id.as_str()))
+    {
+        return Err("Unknown Mindscape suggestion selected".to_owned());
+    }
+    let source_card = database
+        .get_card(&input.suggestions.source_card_id)
+        .await
+        .map_err(|_| "Suggestion source does not belong to the project".to_owned())?;
+    if source_card.project_id != input.suggestions.project_id {
+        return Err("Suggestion source does not belong to the project".to_owned());
+    }
+    let mut tx = database
+        .pool()
+        .begin()
+        .await
+        .map_err(|_| "Unable to begin suggestion transaction".to_owned())?;
     let mut node_map = HashMap::new();
+    let mut position: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM mind_nodes WHERE project_id=?")
+            .bind(&input.suggestions.project_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|_| "Unable to position suggested concepts".to_owned())?;
     for concept in input.suggestions.concepts {
         if !accepted.contains(&concept.id) {
             continue;
@@ -39,27 +84,46 @@ pub async fn apply(
         {
             return Err("Accepted concept is invalid".to_owned());
         }
-        let node = database
-            .create_mind_node(&CreateMindNodeInput {
-                project_id: input.suggestions.project_id.clone(),
-                label: concept.label,
-                description: concept.description,
-                source_card_id: Some(input.suggestions.source_card_id.clone()),
-                source_turn_id: None,
-            })
-            .await
-            .map_err(|_| "Unable to apply concept suggestion".to_owned())?;
-        node_map.insert(concept.id, node.id);
-    }
-    let existing = database
-        .get_mindscape(&input.suggestions.project_id)
+        let node_id = Uuid::now_v7().to_string();
+        let now = Utc::now().to_rfc3339();
+        sqlx::query(
+            "INSERT INTO mind_nodes
+             (id,project_id,label,description,source_card_id,position_x,position_y,created_at)
+             VALUES (?,?,?,?,?,?,?,?)",
+        )
+        .bind(&node_id)
+        .bind(&input.suggestions.project_id)
+        .bind(concept.label)
+        .bind(concept.description)
+        .bind(&input.suggestions.source_card_id)
+        .bind((position % 3) as f64 * 180.0)
+        .bind((position / 3) as f64 * 120.0)
+        .bind(&now)
+        .execute(&mut *tx)
         .await
-        .map_err(|_| "Unable to refresh Mindscape".to_owned())?;
-    let existing_ids = existing
-        .nodes
-        .iter()
-        .map(|node| node.id.clone())
-        .collect::<HashSet<_>>();
+        .map_err(|_| "Unable to apply concept suggestion".to_owned())?;
+        sqlx::query(
+            "INSERT INTO mind_node_sources
+             (id,mind_node_id,card_id,created_at) VALUES (?,?,?,?)",
+        )
+        .bind(Uuid::now_v7().to_string())
+        .bind(&node_id)
+        .bind(&input.suggestions.source_card_id)
+        .bind(&now)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| "Unable to trace suggested concept".to_owned())?;
+        node_map.insert(concept.id, node_id);
+        position += 1;
+    }
+    let existing_ids =
+        sqlx::query_scalar::<_, String>("SELECT id FROM mind_nodes WHERE project_id=?")
+            .bind(&input.suggestions.project_id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|_| "Unable to validate suggested relations".to_owned())?
+            .into_iter()
+            .collect::<HashSet<_>>();
     for relation in input.suggestions.relations {
         if !accepted.contains(&relation.id) {
             continue;
@@ -72,31 +136,102 @@ pub async fn apply(
             .get(&relation.target_key)
             .cloned()
             .unwrap_or(relation.target_key);
-        if !existing_ids.contains(&source_id) || !existing_ids.contains(&target_id) {
-            continue;
+        if source_id == target_id
+            || !existing_ids.contains(&source_id)
+            || !existing_ids.contains(&target_id)
+            || relation.relation.trim().is_empty()
+            || relation.relation.chars().count() > 120
+        {
+            return Err("Accepted relation is invalid".to_owned());
         }
-        database
-            .create_mind_edge(&CreateMindEdgeInput {
-                project_id: input.suggestions.project_id.clone(),
-                source_id,
-                target_id,
-                relation: relation.relation,
-            })
-            .await
-            .map_err(|_| "Unable to apply relation suggestion".to_owned())?;
+        sqlx::query(
+            "INSERT INTO mind_edges
+             (id,project_id,source_id,target_id,relation,created_at) VALUES (?,?,?,?,?,?)",
+        )
+        .bind(Uuid::now_v7().to_string())
+        .bind(&input.suggestions.project_id)
+        .bind(source_id)
+        .bind(target_id)
+        .bind(relation.relation)
+        .bind(Utc::now().to_rfc3339())
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| "Unable to apply relation suggestion".to_owned())?;
     }
     for merge in input.suggestions.merges {
-        if accepted.contains(&merge.id) {
-            database
-                .merge_mind_nodes(
-                    &input.suggestions.project_id,
-                    &merge.source_node_id,
-                    &merge.target_node_id,
-                )
-                .await
-                .map_err(|_| "Unable to apply merge suggestion".to_owned())?;
+        if !accepted.contains(&merge.id) {
+            continue;
         }
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM mind_nodes
+             WHERE project_id=? AND id IN (?,?)",
+        )
+        .bind(&input.suggestions.project_id)
+        .bind(&merge.source_node_id)
+        .bind(&merge.target_node_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|_| "Unable to validate merge suggestion".to_owned())?;
+        if count != 2 || merge.source_node_id == merge.target_node_id {
+            return Err("Accepted merge is invalid".to_owned());
+        }
+        let sources = sqlx::query_as::<_, crate::models::MindNodeSource>(
+            "SELECT * FROM mind_node_sources WHERE mind_node_id=?",
+        )
+        .bind(&merge.source_node_id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|_| "Unable to transfer merged sources".to_owned())?;
+        for source in sources {
+            sqlx::query(
+                "INSERT INTO mind_node_sources
+                 (id,mind_node_id,card_id,turn_id,created_at) VALUES (?,?,?,?,?)",
+            )
+            .bind(Uuid::now_v7().to_string())
+            .bind(&merge.target_node_id)
+            .bind(source.card_id)
+            .bind(source.turn_id)
+            .bind(source.created_at)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| "Unable to merge concept sources".to_owned())?;
+        }
+        sqlx::query(
+            "DELETE FROM mind_edges WHERE project_id=?
+             AND ((source_id=? AND target_id=?) OR (source_id=? AND target_id=?))",
+        )
+        .bind(&input.suggestions.project_id)
+        .bind(&merge.source_node_id)
+        .bind(&merge.target_node_id)
+        .bind(&merge.target_node_id)
+        .bind(&merge.source_node_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| "Unable to remove merged self-relations".to_owned())?;
+        sqlx::query("UPDATE mind_edges SET source_id=? WHERE project_id=? AND source_id=?")
+            .bind(&merge.target_node_id)
+            .bind(&input.suggestions.project_id)
+            .bind(&merge.source_node_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| "Unable to reconnect merged concepts".to_owned())?;
+        sqlx::query("UPDATE mind_edges SET target_id=? WHERE project_id=? AND target_id=?")
+            .bind(&merge.target_node_id)
+            .bind(&input.suggestions.project_id)
+            .bind(&merge.source_node_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| "Unable to reconnect merged concepts".to_owned())?;
+        sqlx::query("DELETE FROM mind_nodes WHERE project_id=? AND id=?")
+            .bind(&input.suggestions.project_id)
+            .bind(&merge.source_node_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| "Unable to complete concept merge".to_owned())?;
     }
+    tx.commit()
+        .await
+        .map_err(|_| "Unable to commit Mindscape suggestions".to_owned())?;
     database
         .get_mindscape(&input.suggestions.project_id)
         .await
@@ -362,7 +497,7 @@ mod tests {
     use super::{apply, normalize, parse_raw};
     use crate::{
         db::Database,
-        models::{ApplyMindSuggestionsInput, MindSuggestionSet, MindscapeGraph},
+        models::{ApplyMindSuggestionsInput, ConceptSuggestion, MindSuggestionSet, MindscapeGraph},
     };
 
     #[test]
@@ -410,5 +545,43 @@ mod tests {
         .await
         .expect("reject");
         assert!(graph.nodes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn invalid_accepted_batch_rolls_back_all_concepts() {
+        let database = Database::in_memory().await.expect("database");
+        let workspace = database.create_project("Atomic").await.expect("project");
+        let result = apply(
+            &database,
+            ApplyMindSuggestionsInput {
+                suggestions: MindSuggestionSet {
+                    project_id: workspace.project.id.clone(),
+                    source_card_id: workspace.cards[0].id.clone(),
+                    concepts: vec![
+                        ConceptSuggestion {
+                            id: "valid".to_owned(),
+                            label: "Valid".to_owned(),
+                            description: String::new(),
+                        },
+                        ConceptSuggestion {
+                            id: "invalid".to_owned(),
+                            label: String::new(),
+                            description: String::new(),
+                        },
+                    ],
+                    relations: vec![],
+                    merges: vec![],
+                },
+                accepted_ids: vec!["valid".to_owned(), "invalid".to_owned()],
+            },
+        )
+        .await;
+        assert!(result.is_err());
+        assert!(database
+            .get_mindscape(&workspace.project.id)
+            .await
+            .expect("graph")
+            .nodes
+            .is_empty());
     }
 }

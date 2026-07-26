@@ -390,6 +390,62 @@ describe("workspace store", () => {
     expect(useWorkspaceStore.getState().mindSuggestions).toBeNull();
   });
 
+  it("applies accepted suggestions and persists moved nodes", async () => {
+    useWorkspaceStore.setState({
+      workspace,
+      mindSuggestions: {
+        projectId: "project-1",
+        sourceCardId: "card-1",
+        concepts: [{
+          id: "suggestion-1",
+          label: "Concept",
+          description: ""
+        }],
+        relations: [],
+        merges: []
+      }
+    });
+    const node = {
+      id: "n1",
+      projectId: "project-1",
+      label: "Concept",
+      description: "",
+      sourceCardId: "card-1",
+      sourceTurnId: null,
+      positionX: 120,
+      positionY: 80,
+      createdAt: ""
+    };
+    const graph = { nodes: [node], edges: [], sources: [] };
+    vi.mocked(mindscapeApi.applySuggestions).mockResolvedValue(graph);
+    await useWorkspaceStore.getState().applyMindSuggestions(["suggestion-1"]);
+    expect(useWorkspaceStore.getState().mindscape).toEqual(graph);
+    expect(useWorkspaceStore.getState().mindSuggestions).toBeNull();
+
+    vi.mocked(mindscapeApi.updateNode).mockResolvedValue({
+      ...node,
+      positionX: 200
+    });
+    await useWorkspaceStore.getState().updateMindNode(
+      "n1",
+      "Concept",
+      "",
+      200,
+      80
+    );
+    expect(useWorkspaceStore.getState().mindscape.nodes[0].positionX).toBe(200);
+  });
+
+  it("reports missing model configuration for AI suggestions", async () => {
+    useWorkspaceStore.setState({
+      workspace,
+      activeModelProfileId: null
+    });
+    await useWorkspaceStore.getState().suggestMindscape("card-1");
+    expect(useWorkspaceStore.getState().error).toContain("Configure");
+    expect(mindscapeApi.suggest).not.toHaveBeenCalled();
+  });
+
   it("creates and prepends a project", async () => {
     vi.mocked(workspaceApi.createProject).mockResolvedValue(workspace);
 

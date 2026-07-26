@@ -68,6 +68,27 @@ impl DocumentStore {
         Ok(())
     }
 
+    pub fn restore_bytes(
+        &self,
+        document_id: &str,
+        mime_type: &str,
+        bytes: &[u8],
+    ) -> Result<PathBuf, String> {
+        let extension = match mime_type {
+            "application/pdf" => "pdf",
+            "text/markdown" => "md",
+            "text/plain" => "txt",
+            _ => return Err("Backup contains an unsupported document type".to_owned()),
+        };
+        let safe_id = format!("{:x}", Sha256::digest(document_id.as_bytes()));
+        let destination = self.root.join(format!("restore-{safe_id}.{extension}"));
+        let temporary = self.root.join(format!(".restore-{safe_id}.importing"));
+        std::fs::write(&temporary, bytes)
+            .and_then(|_| std::fs::rename(&temporary, &destination))
+            .map_err(|_| "Unable to restore a managed document".to_owned())?;
+        Ok(destination)
+    }
+
     pub async fn ingest(
         &self,
         database: &Database,

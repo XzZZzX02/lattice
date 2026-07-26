@@ -307,9 +307,10 @@ pub async fn export_project(
 #[tauri::command]
 pub async fn import_project(
     database: State<'_, Database>,
+    document_store: State<'_, DocumentStore>,
     path: String,
 ) -> Result<ProjectWorkspace, String> {
-    crate::backup::import_project(&database, std::path::Path::new(&path)).await
+    crate::backup::import_project(&database, &document_store, std::path::Path::new(&path)).await
 }
 
 #[tauri::command]
