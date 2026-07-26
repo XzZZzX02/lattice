@@ -10,7 +10,8 @@ vi.mock("../lib/ipc", () => ({
     getWorkspace: vi.fn()
   },
   modelApi: { list: vi.fn() },
-  chatApi: { send: vi.fn(), cancel: vi.fn() }
+  chatApi: { send: vi.fn(), cancel: vi.fn() },
+  cardApi: { create: vi.fn() }
 }));
 
 const workspace: ProjectWorkspace = {
@@ -56,6 +57,7 @@ describe("workspace store", () => {
       ,modelProfiles: [],
       activeModelProfileId: null,
       activeRequestId: null
+      ,activeCardId: null
     });
   });
 

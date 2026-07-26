@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import { BrainCircuit, FolderPlus, Library, Plus, Settings2, Square } from "lucide-react";
+import {
+  BrainCircuit, FolderPlus, GitBranch, Library, Network, Plus, Settings2,
+  Square, Workflow
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useWorkspaceStore } from "./store/workspace";
@@ -8,8 +11,8 @@ import { ModelSettings } from "./components/ModelSettings";
 export function App() {
   const {
     projects, workspace, loading, error, modelProfiles, activeModelProfileId,
-    activeRequestId, loadProjects, createProject, selectProject, loadModels,
-    setActiveModel, sendMessage, cancelMessage
+    activeRequestId, activeCardId, loadProjects, createProject, selectProject, loadModels,
+    setActiveModel, sendMessage, cancelMessage, createCard
   } = useWorkspaceStore();
   const [isCreating, setIsCreating] = useState(false);
   const [title, setTitle] = useState("");
@@ -29,9 +32,7 @@ export function App() {
     setIsCreating(false);
   }
 
-  const activeCard = workspace?.cards.find(
-    (card) => card.id === workspace.project.rootCardId
-  );
+  const activeCard = workspace?.cards.find((card) => card.id === activeCardId);
   const turns = workspace?.turns.filter((turn) => turn.cardId === activeCard?.id) ?? [];
 
   async function submitMessage(event: React.FormEvent) {
@@ -40,6 +41,19 @@ export function App() {
     const content = message;
     setMessage("");
     await sendMessage(activeCard.id, content);
+  }
+
+  function addCard(relation: "child" | "divergent" | "branch") {
+    if (!workspace || !activeCard) return;
+    const lastTurn = turns.at(-1);
+    if (relation === "branch" && !lastTurn) return;
+    void createCard({
+      projectId: workspace.project.id,
+      sourceCardId: activeCard.id,
+      relation,
+      title: relation === "child" ? "Deeper question" : relation === "divergent" ? "New direction" : "Alternative branch",
+      branchFromTurnId: relation === "branch" ? lastTurn?.id : undefined
+    });
   }
 
   return (
@@ -119,6 +133,11 @@ export function App() {
                     </div>
                   </div>
                 ))}
+                <footer className="card-actions">
+                  <button onClick={() => addCard("child")}><Workflow size={15} /> Child</button>
+                  <button onClick={() => addCard("divergent")}><Network size={15} /> Divergent</button>
+                  <button disabled={turns.length === 0} onClick={() => addCard("branch")}><GitBranch size={15} /> Branch</button>
+                </footer>
               </article>
               <aside className="navigator" aria-label="Card tree">
                 <p className="eyebrow">Card map</p>

@@ -4,7 +4,9 @@ use chrono::Utc;
 use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use uuid::Uuid;
 
-use crate::models::{Card, ModelProfile, Project, ProjectWorkspace, SaveModelProfileInput, Turn};
+use crate::models::{
+    Card, CreateCardInput, ModelProfile, Project, ProjectWorkspace, SaveModelProfileInput, Turn,
+};
 
 #[derive(Clone)]
 pub struct Database {
@@ -228,6 +230,46 @@ impl Database {
             .fetch_all(&self.pool)
             .await
     }
+
+    pub async fn create_card(&self, input: &CreateCardInput) -> Result<Card, sqlx::Error> {
+        let id = Uuid::now_v7().to_string();
+        let now = Utc::now().to_rfc3339();
+        let mut tx = self.pool.begin().await?;
+        let source: Card = sqlx::query_as("SELECT * FROM cards WHERE id = ? AND project_id = ?")
+            .bind(&input.source_card_id)
+            .bind(&input.project_id)
+            .fetch_one(&mut *tx)
+            .await?;
+        if let Some(turn_id) = &input.branch_from_turn_id {
+            sqlx::query("SELECT id FROM turns WHERE id = ? AND card_id = ?")
+                .bind(turn_id)
+                .bind(&source.id)
+                .fetch_one(&mut *tx)
+                .await?;
+        }
+        sqlx::query(
+            "INSERT INTO cards
+             (id,project_id,parent_id,relation,branch_from_turn_id,title,unread,position_x,position_y,created_at,updated_at)
+             VALUES (?,?,?,?,?,?,1,?,?,?,?)",
+        )
+        .bind(&id)
+        .bind(&input.project_id)
+        .bind(&source.id)
+        .bind(&input.relation)
+        .bind(&input.branch_from_turn_id)
+        .bind(&input.title)
+        .bind(source.position_x + if input.relation == "divergent" { 260.0 } else { 0.0 })
+        .bind(source.position_y + if input.relation == "child" { 180.0 } else { 120.0 })
+        .bind(&now)
+        .bind(&now)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        sqlx::query_as("SELECT * FROM cards WHERE id = ?")
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await
+    }
 }
 
 #[cfg(test)]
@@ -331,5 +373,41 @@ mod tests {
             reopened.get_turn(&turn.id).await.expect("recovered").status,
             "interrupted"
         );
+    }
+
+    #[tokio::test]
+    async fn creates_all_hierarchical_card_relations() {
+        let database = Database::in_memory().await.expect("database");
+        let workspace = database.create_project("Tree").await.expect("project");
+        let root = &workspace.cards[0];
+        for relation in ["child", "divergent"] {
+            let card = database
+                .create_card(&crate::models::CreateCardInput {
+                    project_id: workspace.project.id.clone(),
+                    source_card_id: root.id.clone(),
+                    relation: relation.to_owned(),
+                    title: relation.to_owned(),
+                    branch_from_turn_id: None,
+                })
+                .await
+                .expect("card");
+            assert_eq!(card.parent_id.as_deref(), Some(root.id.as_str()));
+            assert_eq!(card.relation, relation);
+        }
+        let turn = database
+            .create_streaming_turn(&root.id, "prompt", "model", "request")
+            .await
+            .expect("turn");
+        let branch = database
+            .create_card(&crate::models::CreateCardInput {
+                project_id: workspace.project.id,
+                source_card_id: root.id.clone(),
+                relation: "branch".to_owned(),
+                title: "branch".to_owned(),
+                branch_from_turn_id: Some(turn.id.clone()),
+            })
+            .await
+            .expect("branch");
+        assert_eq!(branch.branch_from_turn_id, Some(turn.id));
     }
 }

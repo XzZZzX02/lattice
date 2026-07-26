@@ -4,8 +4,8 @@ use crate::{
     chat::RequestRegistry,
     db::Database,
     models::{
-        ModelProfile, Project, ProjectWorkspace, SaveModelProfileInput, SendMessageInput,
-        StreamEvent, Turn,
+        Card, CreateCardInput, ModelProfile, Project, ProjectWorkspace, SaveModelProfileInput,
+        SendMessageInput, StreamEvent, Turn,
     },
     models_service,
 };
@@ -16,6 +16,26 @@ fn validate_title(title: &str) -> Result<&str, String> {
         return Err("Project title must contain 1–200 characters".to_owned());
     }
     Ok(value)
+}
+
+#[tauri::command]
+pub async fn create_card(
+    database: State<'_, Database>,
+    input: CreateCardInput,
+) -> Result<Card, String> {
+    if !matches!(input.relation.as_str(), "child" | "divergent" | "branch") {
+        return Err("Unsupported card relation".to_owned());
+    }
+    if input.title.trim().is_empty() || input.title.chars().count() > 240 {
+        return Err("Card title must contain 1–240 characters".to_owned());
+    }
+    if input.relation == "branch" && input.branch_from_turn_id.is_none() {
+        return Err("A branch card requires a branch point".to_owned());
+    }
+    database
+        .create_card(&input)
+        .await
+        .map_err(|_| "Unable to create card".to_owned())
 }
 
 #[tauri::command]

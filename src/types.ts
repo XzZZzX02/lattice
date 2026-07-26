@@ -90,3 +90,11 @@ export type StreamEvent =
   | { type: "completed"; requestId: string; turn: Turn }
   | { type: "cancelled"; requestId: string; turn: Turn }
   | { type: "failed"; requestId: string; turn: Turn; message: string };
+
+export interface CreateCardInput {
+  projectId: string;
+  sourceCardId: string;
+  relation: Exclude<CardRelation, "root">;
+  title: string;
+  branchFromTurnId?: string;
+}

@@ -12,7 +12,8 @@ vi.mock("./lib/ipc", () => ({
     getWorkspace: vi.fn()
   },
   modelApi: { list: vi.fn().mockResolvedValue([]) },
-  chatApi: { send: vi.fn(), cancel: vi.fn() }
+  chatApi: { send: vi.fn(), cancel: vi.fn() },
+  cardApi: { create: vi.fn() }
 }));
 
 describe("App", () => {

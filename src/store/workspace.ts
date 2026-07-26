@@ -1,6 +1,8 @@
 import { create } from "zustand";
-import { chatApi, modelApi, workspaceApi } from "../lib/ipc";
-import type { ModelProfile, Project, ProjectWorkspace, StreamEvent, Turn } from "../types";
+import { cardApi, chatApi, modelApi, workspaceApi } from "../lib/ipc";
+import type {
+  CreateCardInput, ModelProfile, Project, ProjectWorkspace, StreamEvent, Turn
+} from "../types";
 
 interface WorkspaceState {
   projects: Project[];
@@ -10,6 +12,7 @@ interface WorkspaceState {
   modelProfiles: ModelProfile[];
   activeModelProfileId: string | null;
   activeRequestId: string | null;
+  activeCardId: string | null;
   loadProjects: () => Promise<void>;
   createProject: (title: string) => Promise<void>;
   selectProject: (projectId: string) => Promise<void>;
@@ -17,6 +20,8 @@ interface WorkspaceState {
   setActiveModel: (profileId: string) => void;
   sendMessage: (cardId: string, content: string) => Promise<void>;
   cancelMessage: () => Promise<void>;
+  selectCard: (cardId: string) => void;
+  createCard: (input: CreateCardInput) => Promise<void>;
 }
 
 function errorMessage(error: unknown): string {
@@ -31,6 +36,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   modelProfiles: [],
   activeModelProfileId: null,
   activeRequestId: null,
+  activeCardId: null,
   loadProjects: async () => {
     set({ loading: true, error: null });
     try {
@@ -49,6 +55,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const workspace = await workspaceApi.createProject(title);
       set((state) => ({
         workspace,
+        activeCardId: workspace.project.rootCardId,
         projects: [workspace.project, ...state.projects],
         loading: false
       }));
@@ -60,7 +67,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const workspace = await workspaceApi.getWorkspace(projectId);
-      set({ workspace, loading: false });
+      set({ workspace, activeCardId: workspace.project.rootCardId, loading: false });
     } catch (error) {
       set({ loading: false, error: errorMessage(error) });
     }
@@ -111,6 +118,20 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (!requestId) return;
     try {
       await chatApi.cancel(requestId);
+    } catch (error) {
+      set({ error: errorMessage(error) });
+    }
+  },
+  selectCard: (activeCardId) => set({ activeCardId }),
+  createCard: async (input) => {
+    try {
+      const card = await cardApi.create(input);
+      set((state) => ({
+        activeCardId: card.id,
+        workspace: state.workspace
+          ? { ...state.workspace, cards: [...state.workspace.cards, card] }
+          : null
+      }));
     } catch (error) {
       set({ error: errorMessage(error) });
     }
