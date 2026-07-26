@@ -25,6 +25,7 @@ impl Database {
         sqlx::migrate!("./migrations").run(&pool).await?;
         let database = Self { pool };
         database.recover_interrupted_turns().await?;
+        database.recover_interrupted_documents().await?;
         Ok(database)
     }
 
@@ -123,6 +124,13 @@ impl Database {
         .bind(Utc::now().to_rfc3339())
         .execute(&self.pool)
         .await?;
+        Ok(())
+    }
+
+    async fn recover_interrupted_documents(&self) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE documents SET status='failed' WHERE status='processing'")
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
@@ -583,6 +591,16 @@ impl Database {
             .await
     }
 
+    pub async fn find_document_by_id(
+        &self,
+        document_id: &str,
+    ) -> Result<Option<Document>, sqlx::Error> {
+        sqlx::query_as("SELECT * FROM documents WHERE id=?")
+            .bind(document_id)
+            .fetch_optional(&self.pool)
+            .await
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub async fn insert_document(
         &self,
@@ -962,12 +980,31 @@ mod tests {
             .create_streaming_turn(&workspace.cards[0].id, "Hello", "model", "request")
             .await
             .expect("turn");
+        let document = database
+            .insert_document(
+                "recovery-document",
+                &workspace.project.id,
+                "notes.txt",
+                "text/plain",
+                "/tmp/recovery-document",
+                "recovery-hash",
+            )
+            .await
+            .expect("document");
         database.pool().close().await;
 
         let reopened = Database::open(&path).await.expect("reopen");
         assert_eq!(
             reopened.get_turn(&turn.id).await.expect("recovered").status,
             "interrupted"
+        );
+        assert_eq!(
+            reopened
+                .get_document(&workspace.project.id, &document.id)
+                .await
+                .expect("recovered document")
+                .status,
+            "failed"
         );
     }
 

@@ -23,8 +23,10 @@ pub fn run() {
             let database = tauri::async_runtime::block_on(db::Database::open(
                 &data_dir.join("lattice.sqlite3"),
             ))?;
+            let document_store = documents::DocumentStore::new(data_dir.join("documents"))?;
+            tauri::async_runtime::block_on(document_store.recover(&database))?;
             app.manage(database);
-            app.manage(documents::DocumentStore::new(data_dir.join("documents"))?);
+            app.manage(document_store);
             app.manage(chat::RequestRegistry::default());
             Ok(())
         })

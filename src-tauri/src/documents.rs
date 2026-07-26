@@ -33,6 +33,41 @@ impl DocumentStore {
         Ok(Self { root })
     }
 
+    pub async fn recover(&self, database: &Database) -> Result<(), String> {
+        let entries = std::fs::read_dir(&self.root)
+            .map_err(|_| "Unable to inspect local document recovery files".to_owned())?;
+        for entry in entries {
+            let entry = entry.map_err(|_| "Unable to inspect a recovery file".to_owned())?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.ends_with(".importing") {
+                let _ = std::fs::remove_file(entry.path());
+                continue;
+            }
+            let Some(document_id) = name
+                .strip_prefix('.')
+                .and_then(|name| name.strip_suffix(".deleting"))
+            else {
+                continue;
+            };
+            if let Some(document) = database
+                .find_document_by_id(document_id)
+                .await
+                .map_err(|_| "Unable to reconcile a staged document".to_owned())?
+            {
+                let destination = PathBuf::from(document.local_path);
+                if destination.parent() == Some(self.root.as_path()) && !destination.exists() {
+                    std::fs::rename(entry.path(), destination)
+                        .map_err(|_| "Unable to restore a staged document".to_owned())?;
+                } else if destination.exists() {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            } else {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+        Ok(())
+    }
+
     pub async fn ingest(
         &self,
         database: &Database,
@@ -458,6 +493,31 @@ mod tests {
             .delete(&database, &second.project.id, &imported.document.id)
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    async fn recovers_interrupted_import_and_delete_files() {
+        let database = Database::in_memory().await.expect("database");
+        let workspace = database.create_project("Recovery").await.expect("project");
+        let directory = tempfile::tempdir().expect("directory");
+        let source = directory.path().join("notes.txt");
+        std::fs::write(&source, "recoverable").expect("source");
+        let store = DocumentStore::new(directory.path().join("managed")).expect("store");
+        let imported = store
+            .ingest(&database, &workspace.project.id, &source)
+            .await
+            .expect("import");
+        let staged = store
+            .root
+            .join(format!(".{}.deleting", imported.document.id));
+        std::fs::rename(&imported.document.local_path, &staged).expect("stage");
+        let abandoned = store.root.join(".abandoned.importing");
+        std::fs::write(&abandoned, "partial").expect("partial");
+
+        store.recover(&database).await.expect("recover");
+        assert!(Path::new(&imported.document.local_path).exists());
+        assert!(!staged.exists());
+        assert!(!abandoned.exists());
     }
 
     #[tokio::test]
