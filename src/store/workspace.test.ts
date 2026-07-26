@@ -28,7 +28,9 @@ vi.mock("../lib/ipc", () => ({
     get: vi.fn().mockResolvedValue({ nodes: [], edges: [], sources: [] }),
     createNode: vi.fn(),
     createEdge: vi.fn(),
-    updateNode: vi.fn()
+    updateNode: vi.fn(),
+    suggest: vi.fn(),
+    applySuggestions: vi.fn()
   },
   knowledgeApi: {
     search: vi.fn(),
@@ -87,6 +89,8 @@ describe("workspace store", () => {
       ,documents: []
       ,documentCitations: []
       ,mindscape: { nodes: [], edges: [], sources: [] }
+      ,mindSuggestions: null,
+      suggestingMindscape: false
     });
   });
 
@@ -359,6 +363,31 @@ describe("workspace store", () => {
       relation: "supports"
     });
     expect(mindscapeApi.createEdge).toHaveBeenCalled();
+  });
+
+  it("keeps AI suggestions ephemeral until accepted", async () => {
+    useWorkspaceStore.setState({
+      workspace,
+      activeModelProfileId: "m1"
+    });
+    const suggestions = {
+      projectId: "project-1",
+      sourceCardId: "card-1",
+      concepts: [{
+        id: "suggestion-1",
+        label: "Concept",
+        description: "Description"
+      }],
+      relations: [],
+      merges: []
+    };
+    vi.mocked(mindscapeApi.suggest).mockResolvedValue(suggestions);
+    await useWorkspaceStore.getState().suggestMindscape("card-1");
+    expect(useWorkspaceStore.getState().mindSuggestions).toEqual(suggestions);
+
+    await useWorkspaceStore.getState().applyMindSuggestions([]);
+    expect(mindscapeApi.applySuggestions).not.toHaveBeenCalled();
+    expect(useWorkspaceStore.getState().mindSuggestions).toBeNull();
   });
 
   it("creates and prepends a project", async () => {

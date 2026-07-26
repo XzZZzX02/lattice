@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Background,
   Controls,
@@ -6,7 +6,7 @@ import {
   type Connection,
   type Node
 } from "@xyflow/react";
-import type { MindscapeGraph } from "../types";
+import type { MindscapeGraph, MindSuggestionSet } from "../types";
 
 interface MindscapePanelProps {
   graph: MindscapeGraph;
@@ -19,14 +19,31 @@ interface MindscapePanelProps {
     positionX: number,
     positionY: number
   ) => void;
+  suggestions: MindSuggestionSet | null;
+  suggesting: boolean;
+  onSuggest: () => void;
+  onApplySuggestions: (acceptedIds: string[]) => void;
+  onDismissSuggestions: () => void;
 }
 
 export function MindscapePanel({
   graph,
   onOpenSource,
   onConnect,
-  onMove
+  onMove,
+  suggestions,
+  suggesting,
+  onSuggest,
+  onApplySuggestions,
+  onDismissSuggestions
 }: MindscapePanelProps) {
+  const [acceptedIds, setAcceptedIds] = useState<string[]>(() =>
+    suggestions ? [
+      ...suggestions.concepts.map((suggestion) => suggestion.id),
+      ...suggestions.relations.map((suggestion) => suggestion.id),
+      ...suggestions.merges.map((suggestion) => suggestion.id)
+    ] : []
+  );
   const nodes = useMemo(
     () => graph.nodes.map((node) => ({
       id: node.id,
@@ -66,7 +83,48 @@ export function MindscapePanel({
 
   return (
     <aside className="mindscape-panel" aria-label="Mindscape graph">
-      <p className="eyebrow">Mindscape · {graph.nodes.length} concepts</p>
+      <div className="mindscape-heading">
+        <p className="eyebrow">Mindscape · {graph.nodes.length} concepts</p>
+        <button disabled={suggesting} onClick={onSuggest}>
+          {suggesting ? "Thinking…" : "Suggest"}
+        </button>
+      </div>
+      {suggestions && (
+        <div className="suggestion-panel">
+          <strong>Review AI suggestions</strong>
+          {[
+            ...suggestions.concepts.map((item) => ({
+              id: item.id,
+              label: `Concept · ${item.label}`
+            })),
+            ...suggestions.relations.map((item) => ({
+              id: item.id,
+              label: `Relation · ${item.relation}`
+            })),
+            ...suggestions.merges.map((item) => ({
+              id: item.id,
+              label: `Merge · ${item.reason || "duplicate concepts"}`
+            }))
+          ].map((item) => (
+            <label key={item.id}>
+              <input
+                type="checkbox"
+                checked={acceptedIds.includes(item.id)}
+                onChange={(event) => setAcceptedIds((current) =>
+                  event.target.checked
+                    ? [...current, item.id]
+                    : current.filter((id) => id !== item.id)
+                )}
+              />
+              {item.label}
+            </label>
+          ))}
+          <footer>
+            <button onClick={onDismissSuggestions}>Reject all</button>
+            <button onClick={() => onApplySuggestions(acceptedIds)}>Apply selected</button>
+          </footer>
+        </div>
+      )}
       {graph.nodes.length === 0 ? (
         <p className="empty-copy">Add a Card or answer to begin a traceable concept map.</p>
       ) : (

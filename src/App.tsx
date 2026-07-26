@@ -20,7 +20,8 @@ export function App() {
     deleteTurn, regenerateTurn, search, searchResults, favoriteTurnIds,
     toggleFavorite, exportProject, importProject, documents, importDocument,
     deleteDocument, documentCitations, mindscape, addMindNode, addMindEdge,
-    updateMindNode
+    updateMindNode, mindSuggestions, suggestingMindscape, suggestMindscape,
+    applyMindSuggestions, dismissMindSuggestions
   } = useWorkspaceStore();
   const [isCreating, setIsCreating] = useState(false);
   const [title, setTitle] = useState("");
@@ -326,6 +327,11 @@ export function App() {
                   />
                 ) : (
                   <MindscapePanel
+                    key={mindSuggestions
+                      ? [...mindSuggestions.concepts, ...mindSuggestions.relations, ...mindSuggestions.merges]
+                        .map((suggestion) => suggestion.id)
+                        .join(":")
+                      : "mindscape"}
                     graph={mindscape}
                     onOpenSource={(cardId) => {
                       selectCard(cardId);
@@ -343,6 +349,11 @@ export function App() {
                       }
                     }}
                     onMove={(...args) => void updateMindNode(...args)}
+                    suggestions={mindSuggestions}
+                    suggesting={suggestingMindscape}
+                    onSuggest={() => activeCard && void suggestMindscape(activeCard.id)}
+                    onApplySuggestions={(acceptedIds) => void applyMindSuggestions(acceptedIds)}
+                    onDismissSuggestions={dismissMindSuggestions}
                   />
                 )}
               </div>

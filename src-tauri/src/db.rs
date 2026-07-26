@@ -881,6 +881,7 @@ impl Database {
             "SELECT * FROM mind_nodes WHERE project_id=?
              AND ((? IS NOT NULL AND source_turn_id=?)
                OR (? IS NULL AND source_turn_id IS NULL AND source_card_id=?))
+             AND label=?
              LIMIT 1",
         )
         .bind(&input.project_id)
@@ -888,6 +889,7 @@ impl Database {
         .bind(&input.source_turn_id)
         .bind(&input.source_turn_id)
         .bind(&source_card_id)
+        .bind(&input.label)
         .fetch_optional(&self.pool)
         .await?
         {
@@ -1004,6 +1006,79 @@ impl Database {
             .bind(node_id)
             .fetch_one(&self.pool)
             .await
+    }
+
+    pub async fn merge_mind_nodes(
+        &self,
+        project_id: &str,
+        source_node_id: &str,
+        target_node_id: &str,
+    ) -> Result<(), sqlx::Error> {
+        if source_node_id == target_node_id {
+            return Err(sqlx::Error::RowNotFound);
+        }
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM mind_nodes
+             WHERE project_id=? AND id IN (?,?)",
+        )
+        .bind(project_id)
+        .bind(source_node_id)
+        .bind(target_node_id)
+        .fetch_one(&self.pool)
+        .await?;
+        if count != 2 {
+            return Err(sqlx::Error::RowNotFound);
+        }
+        let sources = sqlx::query_as::<_, crate::models::MindNodeSource>(
+            "SELECT * FROM mind_node_sources WHERE mind_node_id=?",
+        )
+        .bind(source_node_id)
+        .fetch_all(&self.pool)
+        .await?;
+        let mut tx = self.pool.begin().await?;
+        for source in sources {
+            sqlx::query(
+                "INSERT INTO mind_node_sources
+                 (id,mind_node_id,card_id,turn_id,created_at) VALUES (?,?,?,?,?)",
+            )
+            .bind(Uuid::now_v7().to_string())
+            .bind(target_node_id)
+            .bind(source.card_id)
+            .bind(source.turn_id)
+            .bind(source.created_at)
+            .execute(&mut *tx)
+            .await?;
+        }
+        sqlx::query(
+            "DELETE FROM mind_edges WHERE project_id=?
+             AND ((source_id=? AND target_id=?) OR (source_id=? AND target_id=?))",
+        )
+        .bind(project_id)
+        .bind(source_node_id)
+        .bind(target_node_id)
+        .bind(target_node_id)
+        .bind(source_node_id)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query("UPDATE mind_edges SET source_id=? WHERE project_id=? AND source_id=?")
+            .bind(target_node_id)
+            .bind(project_id)
+            .bind(source_node_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("UPDATE mind_edges SET target_id=? WHERE project_id=? AND target_id=?")
+            .bind(target_node_id)
+            .bind(project_id)
+            .bind(source_node_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query("DELETE FROM mind_nodes WHERE project_id=? AND id=?")
+            .bind(project_id)
+            .bind(source_node_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(())
     }
 }
 

@@ -7,7 +7,7 @@ import type { ExportFormat } from "../lib/ipc";
 import type {
   CreateCardInput, CreateMindEdgeInput, CreateMindNodeInput, CreateQuoteInput,
   DocumentCitation, LocalDocument, MindscapeGraph, ModelProfile, Project,
-  ProjectWorkspace, Quote, SearchResult, StreamEvent, Turn
+  MindSuggestionSet, ProjectWorkspace, Quote, SearchResult, StreamEvent, Turn
 } from "../types";
 
 interface WorkspaceState {
@@ -25,6 +25,8 @@ interface WorkspaceState {
   documents: LocalDocument[];
   documentCitations: DocumentCitation[];
   mindscape: MindscapeGraph;
+  mindSuggestions: MindSuggestionSet | null;
+  suggestingMindscape: boolean;
   loadProjects: () => Promise<void>;
   createProject: (title: string) => Promise<void>;
   selectProject: (projectId: string) => Promise<void>;
@@ -55,6 +57,9 @@ interface WorkspaceState {
     positionX: number,
     positionY: number
   ) => Promise<void>;
+  suggestMindscape: (sourceCardId: string) => Promise<void>;
+  applyMindSuggestions: (acceptedIds: string[]) => Promise<void>;
+  dismissMindSuggestions: () => void;
 }
 
 function errorMessage(error: unknown): string {
@@ -76,6 +81,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   documents: [],
   documentCitations: [],
   mindscape: { nodes: [], edges: [], sources: [] },
+  mindSuggestions: null,
+  suggestingMindscape: false,
   loadProjects: async () => {
     set({ loading: true, error: null });
     try {
@@ -98,6 +105,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         documents: [],
         documentCitations: [],
         mindscape: { nodes: [], edges: [], sources: [] },
+        mindSuggestions: null,
         projects: [workspace.project, ...state.projects],
         loading: false
       }));
@@ -119,6 +127,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         documents,
         documentCitations,
         mindscape,
+        mindSuggestions: null,
         activeCardId: workspace.project.rootCardId,
         loading: false
       });
@@ -313,6 +322,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         documents,
         documentCitations,
         mindscape,
+        mindSuggestions: null,
         activeCardId: workspace.project.rootCardId,
         projects: [
           workspace.project,
@@ -408,7 +418,48 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     } catch (error) {
       set({ error: errorMessage(error) });
     }
-  }
+  },
+  suggestMindscape: async (sourceCardId) => {
+    const state = get();
+    const projectId = state.workspace?.project.id;
+    const modelProfileId = state.activeModelProfileId;
+    if (!projectId || !modelProfileId) {
+      set({ error: "Configure and select a model before requesting suggestions" });
+      return;
+    }
+    set({ suggestingMindscape: true, error: null });
+    try {
+      const mindSuggestions = await mindscapeApi.suggest(
+        projectId,
+        sourceCardId,
+        modelProfileId
+      );
+      set({ mindSuggestions, suggestingMindscape: false });
+    } catch (error) {
+      set({
+        suggestingMindscape: false,
+        error: errorMessage(error)
+      });
+    }
+  },
+  applyMindSuggestions: async (acceptedIds) => {
+    const suggestions = get().mindSuggestions;
+    if (!suggestions) return;
+    if (acceptedIds.length === 0) {
+      set({ mindSuggestions: null });
+      return;
+    }
+    try {
+      const mindscape = await mindscapeApi.applySuggestions(
+        suggestions,
+        acceptedIds
+      );
+      set({ mindscape, mindSuggestions: null });
+    } catch (error) {
+      set({ error: errorMessage(error) });
+    }
+  },
+  dismissMindSuggestions: () => set({ mindSuggestions: null })
 }));
 
 export function reduceTurns(turns: Turn[], event: StreamEvent): Turn[] {

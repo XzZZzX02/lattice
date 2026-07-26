@@ -222,3 +222,31 @@ export interface CreateMindEdgeInput {
   targetId: string;
   relation: string;
 }
+
+export interface ConceptSuggestion {
+  id: string;
+  label: string;
+  description: string;
+}
+
+export interface RelationSuggestion {
+  id: string;
+  sourceKey: string;
+  targetKey: string;
+  relation: string;
+}
+
+export interface MergeSuggestion {
+  id: string;
+  sourceNodeId: string;
+  targetNodeId: string;
+  reason: string;
+}
+
+export interface MindSuggestionSet {
+  projectId: string;
+  sourceCardId: string;
+  concepts: ConceptSuggestion[];
+  relations: RelationSuggestion[];
+  merges: MergeSuggestion[];
+}

@@ -13,6 +13,7 @@ import type {
   CreateMindNodeInput,
   MindEdge,
   MindNode,
+  MindSuggestionSet,
   MindscapeGraph,
   Project,
   ProjectWorkspace,
@@ -106,6 +107,21 @@ export const mindscapeApi = {
     description,
     positionX,
     positionY
+  }),
+  suggest: (
+    projectId: string,
+    sourceCardId: string,
+    modelProfileId: string
+  ) => invoke<MindSuggestionSet>("suggest_mindscape", {
+    projectId,
+    sourceCardId,
+    modelProfileId
+  }),
+  applySuggestions: (
+    suggestions: MindSuggestionSet,
+    acceptedIds: string[]
+  ) => invoke<MindscapeGraph>("apply_mind_suggestions", {
+    input: { suggestions, acceptedIds }
   })
 };
 

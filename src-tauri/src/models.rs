@@ -303,3 +303,46 @@ pub struct CreateMindEdgeInput {
     pub target_id: String,
     pub relation: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ConceptSuggestion {
+    pub id: String,
+    pub label: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RelationSuggestion {
+    pub id: String,
+    pub source_key: String,
+    pub target_key: String,
+    pub relation: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MergeSuggestion {
+    pub id: String,
+    pub source_node_id: String,
+    pub target_node_id: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MindSuggestionSet {
+    pub project_id: String,
+    pub source_card_id: String,
+    pub concepts: Vec<ConceptSuggestion>,
+    pub relations: Vec<RelationSuggestion>,
+    pub merges: Vec<MergeSuggestion>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApplyMindSuggestionsInput {
+    pub suggestions: MindSuggestionSet,
+    pub accepted_ids: Vec<String>,
+}

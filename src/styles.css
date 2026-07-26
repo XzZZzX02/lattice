@@ -89,6 +89,13 @@ button { color: inherit; }
 .navigator-tabs button { flex: 1; border: 1px solid #303833; border-radius: 7px; background: #171c19; color: #758078; padding: 5px; font-size: 9px; }
 .navigator-tabs button.active { background: #263029; color: #8fe6a8; }
 .mindscape-panel { width: 100%; height: 430px; border-left: 1px solid #232824; padding-left: 22px; }
+.mindscape-heading { display: flex; align-items: center; justify-content: space-between; }
+.mindscape-heading button { border: 1px solid #34453a; border-radius: 7px; background: #1b261f; color: #82cb97; padding: 4px 7px; font-size: 9px; }
+.suggestion-panel { position: absolute; z-index: 4; width: 208px; max-height: 300px; overflow: auto; padding: 10px; border: 1px solid #435148; border-radius: 10px; background: #131815; box-shadow: 0 14px 36px #000; }
+.suggestion-panel > strong { display: block; margin-bottom: 7px; font-size: 10px; }
+.suggestion-panel label { display: flex; gap: 5px; padding: 5px 0; color: #9fa8a2; font-size: 9px; }
+.suggestion-panel footer { display: flex; gap: 5px; margin-top: 8px; }
+.suggestion-panel footer button { flex: 1; border: 1px solid #3c473f; border-radius: 6px; background: #222923; color: #b6c0b9; padding: 5px; font-size: 8px; }
 .mind-flow { height: 390px; border-radius: 15px; overflow: hidden; background: rgba(15,18,16,.55); }
 .mind-node { width: 120px !important; border: 1px solid #50725a !important; border-radius: 12px !important; background: #1b241e !important; color: #b9d8c1 !important; font-size: 9px !important; }
 .flow-map { height: 420px; border-radius: 15px; overflow: hidden; background: rgba(15,18,16,.55); }

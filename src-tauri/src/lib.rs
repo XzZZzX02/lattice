@@ -4,6 +4,7 @@ pub mod commands;
 pub mod context;
 pub mod db;
 pub mod documents;
+pub mod mindscape;
 pub mod models;
 pub mod models_service;
 pub mod retrieval;
@@ -48,6 +49,8 @@ pub fn run() {
             commands::create_mind_node,
             commands::create_mind_edge,
             commands::update_mind_node,
+            commands::suggest_mindscape,
+            commands::apply_mind_suggestions,
             commands::list_documents,
             commands::list_document_chunks,
             commands::list_document_citations,

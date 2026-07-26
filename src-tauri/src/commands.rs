@@ -5,13 +5,32 @@ use crate::{
     db::Database,
     documents::DocumentStore,
     models::{
-        Card, CreateCardInput, CreateMindEdgeInput, CreateMindNodeInput, CreateQuoteInput,
-        Document, DocumentChunk, DocumentCitation, DocumentImportResult, MindEdge, MindNode,
-        MindscapeGraph, ModelProfile, Project, ProjectWorkspace, Quote, RegeneratedTurn,
-        SaveModelProfileInput, SearchResult, SendMessageInput, StreamEvent, Turn,
+        ApplyMindSuggestionsInput, Card, CreateCardInput, CreateMindEdgeInput, CreateMindNodeInput,
+        CreateQuoteInput, Document, DocumentChunk, DocumentCitation, DocumentImportResult,
+        MindEdge, MindNode, MindSuggestionSet, MindscapeGraph, ModelProfile, Project,
+        ProjectWorkspace, Quote, RegeneratedTurn, SaveModelProfileInput, SearchResult,
+        SendMessageInput, StreamEvent, Turn,
     },
     models_service,
 };
+
+#[tauri::command]
+pub async fn suggest_mindscape(
+    database: State<'_, Database>,
+    project_id: String,
+    source_card_id: String,
+    model_profile_id: String,
+) -> Result<MindSuggestionSet, String> {
+    crate::mindscape::suggest(&database, &project_id, &source_card_id, &model_profile_id).await
+}
+
+#[tauri::command]
+pub async fn apply_mind_suggestions(
+    database: State<'_, Database>,
+    input: ApplyMindSuggestionsInput,
+) -> Result<MindscapeGraph, String> {
+    crate::mindscape::apply(&database, input).await
+}
 
 #[tauri::command]
 pub async fn get_mindscape(
