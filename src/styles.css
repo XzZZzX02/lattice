@@ -13,15 +13,22 @@ button { color: inherit; }
 .quick-actions button, .project, .settings { border: 0; background: transparent; padding: 10px; border-radius: 10px; display: flex; align-items: center; gap: 10px; cursor: pointer; color: #a9b0ab; text-align: left; }
 .quick-actions button:hover, .project:hover, .settings:hover { background: #1b201d; color: #f5f8f5; }
 .project-section { flex: 1; padding-top: 22px; }
+.new-project-form { margin: 10px 0; padding: 10px; border: 1px solid #313a34; border-radius: 12px; background: #171c19; }
+.new-project-form input { width: 100%; border: 1px solid #343c37; background: #0d100e; color: white; border-radius: 8px; padding: 9px; outline: 0; }
+.new-project-form div { display: flex; gap: 6px; margin-top: 8px; }
+.new-project-form button { flex: 1; border: 0; border-radius: 7px; padding: 7px; background: #2a322c; }
+.new-project-form button[type="submit"] { background: #67e88c; color: #07110a; }
 .eyebrow { margin: 0 0 9px; color: #7e8982; text-transform: uppercase; letter-spacing: .12em; font-size: 10px; font-weight: 750; }
 .project { width: 100%; }
 .project.active { background: #212722; color: white; }
 .project-dot { width: 7px; height: 7px; border-radius: 50%; background: #59615c; }
 .project.active .project-dot { background: #67e88c; box-shadow: 0 0 10px #67e88c; }
 .settings { width: 100%; border-top: 1px solid #242925; border-radius: 0; padding-top: 18px; }
+.empty-copy { color: #646d67; font-size: 12px; line-height: 1.5; padding: 10px; }
 .workspace { min-width: 0; padding: 24px 28px 18px; display: flex; flex-direction: column; height: 100vh; }
 .workspace-header { display: flex; justify-content: space-between; align-items: center; max-width: 1140px; width: 100%; margin: 0 auto 22px; }
 .workspace-header h1 { font-size: 20px; margin: 0; }
+.error-banner { position: fixed; top: 16px; right: 16px; z-index: 10; background: #532a2a; border: 1px solid #984747; padding: 10px 14px; border-radius: 10px; }
 .local-pill { border: 1px solid #2c3931; border-radius: 999px; padding: 7px 11px; color: #92d4a5; background: #142019; font-size: 12px; }
 .workspace-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(560px, 820px) 230px; gap: 24px; place-content: center; }
 .conversation-card { align-self: center; max-height: calc(100vh - 190px); overflow: auto; border: 1px solid #343b36; border-radius: 24px; background: linear-gradient(145deg, #202522, #171b19); box-shadow: 0 28px 80px rgba(0,0,0,.34); padding: 32px; }
@@ -30,6 +37,8 @@ button { color: inherit; }
 .message { margin-top: 24px; line-height: 1.65; }
 .message.user { margin-left: auto; background: #353b37; border-radius: 14px 14px 4px 14px; padding: 12px 15px; width: max-content; max-width: 80%; }
 .message.assistant { color: #c8d0cb; }
+.empty-card { min-height: 250px; display: grid; place-items: center; align-content: center; color: #7b857e; }
+.empty-card p { margin: 10px 0; }
 .navigator { align-self: center; height: 380px; border-left: 1px solid #232824; padding-left: 22px; }
 .tree { display: grid; justify-items: center; padding-top: 34px; }
 .tree-node { border: 1px solid #353d37; background: #181c19; border-radius: 999px; padding: 8px 12px; font-size: 11px; }
@@ -44,3 +53,9 @@ button { color: inherit; }
 .composer select { width: 180px; color: #bdc5bf; background: #282e2a; border: 0; border-radius: 10px; padding: 9px; }
 .composer textarea { resize: none; flex: 1; color: white; background: transparent; border: 0; outline: 0; padding: 8px; }
 .composer button { width: 36px; height: 36px; border: 0; border-radius: 11px; background: #67e88c; color: #07110a; font-weight: 900; }
+.composer button:disabled { opacity: .35; }
+.welcome { margin: auto; max-width: 600px; text-align: center; }
+.welcome .large { width: 58px; height: 58px; margin: 0 auto 28px; }
+.welcome h1 { font-size: 48px; margin: 0 0 16px; letter-spacing: -.04em; }
+.welcome > p:not(.eyebrow) { color: #879089; line-height: 1.6; font-size: 17px; }
+.welcome > button { margin-top: 20px; border: 0; border-radius: 12px; padding: 12px 17px; background: #67e88c; color: #07110a; font-weight: 750; display: inline-flex; align-items: center; gap: 8px; }

@@ -1,13 +1,37 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
+import { useWorkspaceStore } from "./store/workspace";
+
+vi.mock("./lib/ipc", () => ({
+  workspaceApi: {
+    listProjects: vi.fn().mockResolvedValue([]),
+    createProject: vi.fn(),
+    getWorkspace: vi.fn()
+  }
+}));
 
 describe("App", () => {
-  it("renders the local exploration workspace", () => {
+  beforeEach(() => {
+    useWorkspaceStore.setState({
+      projects: [],
+      workspace: null,
+      loading: false,
+      error: null
+    });
+  });
+
+  it("renders the empty local workspace", async () => {
     render(<App />);
-    expect(screen.getByText("Lattice")).toBeInTheDocument();
+    expect(await screen.findByText("Turn a conversation into a map.")).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Workspace actions" })).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "Message" })).toBeInTheDocument();
-    expect(screen.getByRole("complementary", { name: "Card tree" })).toBeInTheDocument();
+  });
+
+  it("opens the new project form", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: "Create project" }));
+    expect(screen.getByRole("textbox", { name: "Project title" })).toHaveFocus();
   });
 });
