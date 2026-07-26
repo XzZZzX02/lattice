@@ -144,6 +144,42 @@ describe("workspace store", () => {
     expect(chatApi.cancel).toHaveBeenCalledWith("r1");
   });
 
+  it("blocks a second send before the first request emits its started event", async () => {
+    let finishRequest: (() => void) | undefined;
+    const turn = {
+      id: "turn-pending", cardId: "card-1", userContent: "first",
+      assistantContent: "done", modelProfileId: "m1",
+      status: "completed" as const, errorMessage: null, requestId: "request-1",
+      createdAt: "", updatedAt: ""
+    };
+    vi.mocked(chatApi.send).mockImplementation(
+      () => new Promise((resolve) => {
+        finishRequest = () => resolve(turn);
+      })
+    );
+    useWorkspaceStore.setState({
+      workspace,
+      activeModelProfileId: "m1"
+    });
+
+    const first = useWorkspaceStore.getState().sendMessage(
+      "card-1",
+      "first",
+      { quoteIds: [] }
+    );
+    await useWorkspaceStore.getState().sendMessage(
+      "card-1",
+      "second",
+      { quoteIds: [] }
+    );
+
+    expect(chatApi.send).toHaveBeenCalledOnce();
+    expect(useWorkspaceStore.getState().activeRequestCardId).toBe("card-1");
+    finishRequest?.();
+    await first;
+    expect(useWorkspaceStore.getState().activeRequestCardId).toBeNull();
+  });
+
   it("sends only explicit quotes and ignores events after switching projects", async () => {
     const otherWorkspace: ProjectWorkspace = {
       ...workspace,

@@ -173,11 +173,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       set({ error: "The target card is not available in this project" });
       return;
     }
-    if (initialState.activeRequestId) {
+    if (initialState.activeRequestId || initialState.activeRequestCardId) {
       set({ error: "Another response is already generating" });
       return;
     }
-    set({ error: null });
+    set({ error: null, activeRequestCardId: cardId });
     const handleEvent = (event: StreamEvent) => {
       const active = event.type === "started" || event.type === "delta";
       set((state) => {
@@ -224,6 +224,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
             : {}
         );
       }
+      set((state) =>
+        state.activeRequestCardId === cardId
+          ? { activeRequestId: null, activeRequestCardId: null }
+          : {}
+      );
     } catch (error) {
       set((state) => ({
         activeRequestId: null,

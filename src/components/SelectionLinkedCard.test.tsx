@@ -91,8 +91,10 @@ describe("LinkedCardPreview", () => {
         activeRequestCardId={null}
         anchor={{ left: 20, right: 60, top: 80, bottom: 100 }}
         card={card}
+        deletionDisabled={false}
         modelConfigured
         onCancel={vi.fn()}
+        onDelete={vi.fn()}
         onDismiss={vi.fn()}
         onOpenCard={onOpenCard}
         onSendMessage={vi.fn()}
@@ -113,8 +115,10 @@ describe("LinkedCardPreview", () => {
         activeRequestCardId={null}
         anchor={{ left: 20, right: 60, top: 80, bottom: 100 }}
         card={card}
+        deletionDisabled={false}
         modelConfigured
         onCancel={vi.fn()}
+        onDelete={vi.fn()}
         onDismiss={vi.fn()}
         onOpenCard={vi.fn()}
         onSendMessage={vi.fn()}
@@ -132,8 +136,10 @@ describe("LinkedCardPreview", () => {
         activeRequestCardId={null}
         anchor={{ left: 1000, right: 1010, top: 80, bottom: 100 }}
         card={card}
+        deletionDisabled={false}
         modelConfigured
         onCancel={vi.fn()}
+        onDelete={vi.fn()}
         onDismiss={onDismiss}
         onOpenCard={vi.fn()}
         onSendMessage={vi.fn()}
@@ -159,8 +165,10 @@ describe("LinkedCardPreview", () => {
         activeRequestCardId={null}
         anchor={{ left: 20, right: 60, top: 80, bottom: 100 }}
         card={card}
+        deletionDisabled={false}
         modelConfigured
         onCancel={vi.fn()}
+        onDelete={vi.fn()}
         onDismiss={vi.fn()}
         onOpenCard={vi.fn()}
         onSendMessage={onSendMessage}
@@ -185,8 +193,10 @@ describe("LinkedCardPreview", () => {
         activeRequestCardId="card-2"
         anchor={{ left: 20, right: 60, top: 80, bottom: 100 }}
         card={card}
+        deletionDisabled={false}
         modelConfigured
         onCancel={onCancel}
+        onDelete={vi.fn()}
         onDismiss={vi.fn()}
         onOpenCard={vi.fn()}
         onSendMessage={vi.fn()}
@@ -202,8 +212,10 @@ describe("LinkedCardPreview", () => {
         activeRequestCardId={null}
         anchor={{ left: 20, right: 60, top: 80, bottom: 100 }}
         card={card}
+        deletionDisabled={false}
         modelConfigured={false}
         onCancel={vi.fn()}
+        onDelete={vi.fn()}
         onDismiss={vi.fn()}
         onOpenCard={vi.fn()}
         onSendMessage={vi.fn()}
@@ -216,5 +228,49 @@ describe("LinkedCardPreview", () => {
     );
     expect(screen.getByRole("button", { name: "Send linked card follow-up" })).toBeDisabled();
     expect(screen.getByText("Configure a model to follow up.")).toBeInTheDocument();
+  });
+
+  it("deletes from the preview and resets its draft when the linked card changes", async () => {
+    const user = userEvent.setup();
+    const onDelete = vi.fn();
+    const { rerender } = render(
+      <LinkedCardPreview
+        activeRequestCardId={null}
+        anchor={{ left: 20, right: 60, top: 80, bottom: 100 }}
+        card={card}
+        deletionDisabled={false}
+        modelConfigured
+        onCancel={vi.fn()}
+        onDelete={onDelete}
+        onDismiss={vi.fn()}
+        onOpenCard={vi.fn()}
+        onSendMessage={vi.fn()}
+        turns={[turn]}
+      />
+    );
+    const input = screen.getByRole("textbox", { name: "Follow up in beta" });
+    await user.type(input, "card-specific draft");
+    await user.click(screen.getByRole("button", { name: "Delete linked card beta" }));
+    expect(onDelete).toHaveBeenCalledWith("card-2");
+
+    const nextCard = { ...card, id: "card-3", title: "gamma" };
+    rerender(
+      <LinkedCardPreview
+        activeRequestCardId={null}
+        anchor={{ left: 20, right: 60, top: 80, bottom: 100 }}
+        card={nextCard}
+        deletionDisabled={false}
+        modelConfigured
+        onCancel={vi.fn()}
+        onDelete={onDelete}
+        onDismiss={vi.fn()}
+        onOpenCard={vi.fn()}
+        onSendMessage={vi.fn()}
+        turns={[]}
+      />
+    );
+    expect(
+      screen.getByRole("textbox", { name: "Follow up in gamma" })
+    ).toHaveValue("");
   });
 });

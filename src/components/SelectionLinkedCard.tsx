@@ -7,7 +7,7 @@ import {
   type FormEvent,
   type KeyboardEvent
 } from "react";
-import { ArrowUpRight, GitBranch, Send, Square, X } from "lucide-react";
+import { ArrowUpRight, GitBranch, Send, Square, Trash2, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { SelectionAnchor } from "../lib/floating";
@@ -94,8 +94,10 @@ export function LinkedCardPreview({
   activeRequestCardId,
   anchor,
   card,
+  deletionDisabled,
   modelConfigured,
   onCancel,
+  onDelete,
   turns,
   onDismiss,
   onOpenCard,
@@ -104,25 +106,35 @@ export function LinkedCardPreview({
   activeRequestCardId: string | null;
   anchor: SelectionAnchor;
   card: Card;
+  deletionDisabled: boolean;
   modelConfigured: boolean;
   turns: Turn[];
   onCancel: () => void;
+  onDelete: (cardId: string) => void;
   onDismiss: () => void;
   onOpenCard: (cardId: string) => void;
   onSendMessage: (cardId: string, content: string) => Promise<void> | void;
 }) {
   const previewRef = useRef<HTMLElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
-  const [draft, setDraft] = useState("");
+  const [draftState, setDraftState] = useState({
+    cardId: card.id,
+    content: ""
+  });
+  const draft = draftState.cardId === card.id ? draftState.content : "";
+  const setDraft = (content: string) => {
+    setDraftState({ cardId: card.id, content });
+  };
   const position = positionPreview(anchor);
   const isGenerating = activeRequestCardId === card.id;
   const anotherCardIsGenerating =
     activeRequestCardId !== null && !isGenerating;
+  const latestTurn = turns.at(-1);
 
   useEffect(() => {
     const history = historyRef.current;
     if (history) history.scrollTop = history.scrollHeight;
-  }, [turns]);
+  }, [latestTurn?.assistantContent, latestTurn?.status, turns.length]);
 
   useEffect(() => {
     function handleKeyDown(event: globalThis.KeyboardEvent) {
@@ -170,9 +182,18 @@ export function LinkedCardPreview({
           <span><GitBranch size={11} /> Linked card</span>
           <strong>{card.title}</strong>
         </div>
-        <button aria-label="Close linked card preview" onClick={onDismiss}>
-          <X size={14} />
-        </button>
+        <div className="linked-card-header-actions">
+          <button
+            aria-label={`Delete linked card ${card.title}`}
+            disabled={deletionDisabled}
+            onClick={() => onDelete(card.id)}
+          >
+            <Trash2 size={13} />
+          </button>
+          <button aria-label="Close linked card preview" onClick={onDismiss}>
+            <X size={14} />
+          </button>
+        </div>
       </header>
       <div className="linked-card-history" ref={historyRef}>
         {turns.length === 0 && (

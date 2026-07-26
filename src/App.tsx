@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   BrainCircuit, Download, FileText, FolderPlus, GitBranch, Library, Network,
   Plus, Search, Settings2, Square, Star, Trash2, Upload, Workflow, X
@@ -53,6 +53,15 @@ export function App() {
     linkId: string;
     anchor: SelectionAnchor;
   } | null>(null);
+  const [pendingCardDeletion, setPendingCardDeletion] = useState<{
+    projectId: string;
+    cardId: string;
+    title: string;
+    cardIds: string[];
+    cardCount: number;
+    descendantCount: number;
+    turnCount: number;
+  } | null>(null);
 
   useEffect(() => {
     void loadProjects();
@@ -78,10 +87,14 @@ export function App() {
   const linkedTurns = workspace?.turns.filter(
     (turn) => turn.cardId === linkedCard?.id
   ) ?? [];
+  const visibleCardDeletion =
+    pendingCardDeletion?.projectId === workspace?.project.id
+      ? pendingCardDeletion
+      : null;
 
   async function submitMessage(event: React.FormEvent) {
     event.preventDefault();
-    if (!activeCard || !message.trim() || activeRequestId) return;
+    if (!activeCard || !message.trim() || activeRequestCardId) return;
     const content = message;
     setMessage("");
     await sendMessage(activeCard.id, content, {
@@ -126,8 +139,8 @@ export function App() {
     window.getSelection()?.removeAllRanges();
   }
 
-  async function confirmCardDeletion(cardId: string) {
-    if (!workspace || activeRequestId) return;
+  const requestCardDeletion = useCallback((cardId: string) => {
+    if (!workspace || activeRequestCardId) return;
     const card = workspace.cards.find((current) => current.id === cardId);
     const summary = summarizeCardSubtree(
       workspace.cards,
@@ -135,20 +148,31 @@ export function App() {
       cardId
     );
     if (!card || card.relation === "root" || !summary) return;
-    const confirmed = window.confirm(
-      `Delete “${card.title}”? This permanently removes `
-      + `${summary.cardCount} card${summary.cardCount === 1 ? "" : "s"} `
-      + `and ${summary.turnCount} message${summary.turnCount === 1 ? "" : "s"}. `
-      + "This cannot be undone."
-    );
-    if (!confirmed) return;
-    await deleteCard(cardId);
+    setPendingCardDeletion({
+      projectId: workspace.project.id,
+      cardId,
+      title: card.title,
+      ...summary
+    });
+  }, [activeRequestCardId, workspace]);
+
+  async function deleteConfirmedCard() {
+    const pending = pendingCardDeletion;
+    if (
+      !pending
+      || activeRequestCardId
+      || pending.projectId !== workspace?.project.id
+    ) {
+      return;
+    }
+    await deleteCard(pending.cardId);
     if (
       linkedCard
-      && summary.cardIds.includes(linkedCard.id)
+      && pending.cardIds.includes(linkedCard.id)
     ) {
       setLinkedPreview(null);
     }
+    setPendingCardDeletion(null);
   }
 
   function addToMindscape(
@@ -285,9 +309,9 @@ export function App() {
                       <button
                         aria-label={`Delete card ${activeCard?.title ?? ""}`}
                         className="delete-card-button"
-                        disabled={activeRequestId !== null}
+                        disabled={activeRequestCardId !== null}
                         onClick={() => {
-                          if (activeCard) void confirmCardDeletion(activeCard.id);
+                          if (activeCard) requestCardDeletion(activeCard.id);
                         }}
                       >
                         <Trash2 size={12} /> Delete
@@ -434,8 +458,8 @@ export function App() {
                   <CardNavigator
                     cards={workspace.cards}
                     activeCardId={activeCardId}
-                    deletionDisabled={activeRequestId !== null}
-                    onDelete={(cardId) => void confirmCardDeletion(cardId)}
+                    deletionDisabled={activeRequestCardId !== null}
+                    onDelete={requestCardDeletion}
                     onSelect={selectCard}
                   />
                 ) : (
@@ -495,7 +519,7 @@ export function App() {
               {activeRequestId ? (
                 <button type="button" aria-label="Stop" onClick={() => void cancelMessage()}><Square size={13} /></button>
               ) : (
-                <button type="submit" aria-label="Send" disabled={!message.trim() || !activeModelProfileId}>↑</button>
+                <button type="submit" aria-label="Send" disabled={!message.trim() || !activeModelProfileId || activeRequestCardId !== null}>↑</button>
               )}
             </form>
           </>
@@ -513,13 +537,54 @@ export function App() {
         setSettingsOpen(open);
         if (!open) void loadModels();
       }} />
+      {visibleCardDeletion && (
+        <div className="card-delete-overlay">
+          <section
+            aria-label={`Delete ${visibleCardDeletion.title}`}
+            aria-modal="true"
+            className="card-delete-dialog"
+            role="dialog"
+          >
+            <p className="eyebrow">Permanent deletion</p>
+            <h2>Delete “{visibleCardDeletion.title}”?</h2>
+            <p>
+              This permanently removes {visibleCardDeletion.cardCount}{" "}
+              card{visibleCardDeletion.cardCount === 1 ? "" : "s"},{" "}
+              {visibleCardDeletion.descendantCount} descendant
+              {visibleCardDeletion.descendantCount === 1 ? "" : "s"}, and{" "}
+              {visibleCardDeletion.turnCount} message
+              {visibleCardDeletion.turnCount === 1 ? "" : "s"}.
+            </p>
+            <p>This cannot be undone.</p>
+            <div>
+              <button
+                aria-label="Cancel card deletion"
+                autoFocus
+                onClick={() => setPendingCardDeletion(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="danger"
+                disabled={activeRequestCardId !== null}
+                onClick={() => void deleteConfirmedCard()}
+              >
+                Delete permanently
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {linkedPreview && linkedCard && (
         <LinkedCardPreview
           activeRequestCardId={activeRequestCardId}
           anchor={linkedPreview.anchor}
           card={linkedCard}
+          deletionDisabled={activeRequestCardId !== null}
+          key={linkedCard.id}
           modelConfigured={activeModelProfileId !== null}
           onCancel={() => void cancelMessage()}
+          onDelete={requestCardDeletion}
           turns={linkedTurns}
           onDismiss={() => setLinkedPreview(null)}
           onOpenCard={(cardId) => {

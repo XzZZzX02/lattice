@@ -70,6 +70,7 @@ describe("App", () => {
       loading: false,
       error: null,
       activeCardId: null,
+      activeRequestId: null,
       activeRequestCardId: null,
       pendingQuotes: [],
       documents: [],
@@ -215,7 +216,6 @@ describe("App", () => {
       createdAt: "", updatedAt: ""
     };
     const deleteCard = vi.fn().mockResolvedValue(undefined);
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     useWorkspaceStore.setState({
       projects: [workspaceFixture.project],
       workspace: {
@@ -232,10 +232,19 @@ describe("App", () => {
       screen.getAllByRole("button", { name: "Delete card Child" })[0]
     );
 
-    expect(confirm).toHaveBeenCalledWith(
-      "Delete “Child”? This permanently removes 1 card and 1 message. This cannot be undone."
+    expect(deleteCard).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("dialog", { name: "Delete Child" });
+    expect(dialog).toHaveTextContent(
+      "This permanently removes 1 card, 0 descendants, and 1 message."
     );
+    await user.click(screen.getByRole("button", { name: "Cancel card deletion" }));
+    expect(screen.queryByRole("dialog", { name: "Delete Child" })).not.toBeInTheDocument();
+    expect(deleteCard).not.toHaveBeenCalled();
+
+    await user.click(
+      screen.getAllByRole("button", { name: "Delete card Child" })[0]
+    );
+    await user.click(screen.getByRole("button", { name: "Delete permanently" }));
     expect(deleteCard).toHaveBeenCalledWith("c2");
-    confirm.mockRestore();
   });
 });

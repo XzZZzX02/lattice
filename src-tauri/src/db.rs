@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use chrono::Utc;
-use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
+use sqlx::{sqlite::SqliteConnectOptions, QueryBuilder, Sqlite, SqlitePool};
 use uuid::Uuid;
 
 use crate::models::{
@@ -541,6 +541,23 @@ impl Database {
         if streaming_count > 0 {
             return Err(sqlx::Error::RowNotFound);
         }
+        let affected_mind_node_ids: Vec<String> = sqlx::query_scalar(
+            "WITH RECURSIVE subtree(id) AS (
+                SELECT id FROM cards WHERE id = ?
+                UNION ALL
+                SELECT cards.id FROM cards JOIN subtree ON cards.parent_id = subtree.id
+             )
+             SELECT DISTINCT mind_node_id
+             FROM mind_node_sources
+             WHERE card_id IN (SELECT id FROM subtree)
+                OR turn_id IN (
+                    SELECT turns.id FROM turns
+                    WHERE turns.card_id IN (SELECT id FROM subtree)
+                )",
+        )
+        .bind(card_id)
+        .fetch_all(&mut *tx)
+        .await?;
         let deleted = sqlx::query("DELETE FROM cards WHERE id = ? AND relation <> 'root'")
             .bind(card_id)
             .execute(&mut *tx)
@@ -548,17 +565,23 @@ impl Database {
         if deleted.rows_affected() != 1 {
             return Err(sqlx::Error::RowNotFound);
         }
-        sqlx::query(
-            "DELETE FROM mind_nodes
-             WHERE project_id = ?
-             AND NOT EXISTS (
+        if !affected_mind_node_ids.is_empty() {
+            let mut cleanup =
+                QueryBuilder::<Sqlite>::new("DELETE FROM mind_nodes WHERE project_id = ");
+            cleanup.push_bind(&card.project_id);
+            cleanup.push(" AND id IN (");
+            let mut ids = cleanup.separated(", ");
+            for mind_node_id in &affected_mind_node_ids {
+                ids.push_bind(mind_node_id);
+            }
+            ids.push_unseparated(
+                ") AND NOT EXISTS (
                 SELECT 1 FROM mind_node_sources
                 WHERE mind_node_sources.mind_node_id = mind_nodes.id
              )",
-        )
-        .bind(&card.project_id)
-        .execute(&mut *tx)
-        .await?;
+            );
+            cleanup.build().execute(&mut *tx).await?;
+        }
         sqlx::query("UPDATE projects SET updated_at = ? WHERE id = ?")
             .bind(Utc::now().to_rfc3339())
             .bind(&card.project_id)
@@ -1772,6 +1795,21 @@ mod tests {
             })
             .await
             .expect("retained node");
+        let unrelated_orphan = database
+            .create_mind_node(&crate::models::CreateMindNodeInput {
+                project_id: workspace.project.id.clone(),
+                label: "Pre-existing orphan".to_owned(),
+                description: String::new(),
+                source_card_id: Some(sibling.id.clone()),
+                source_turn_id: None,
+            })
+            .await
+            .expect("unrelated node");
+        sqlx::query("DELETE FROM mind_node_sources WHERE mind_node_id=?")
+            .bind(&unrelated_orphan.id)
+            .execute(database.pool())
+            .await
+            .expect("orphan unrelated node");
         sqlx::query(
             "INSERT INTO mind_node_sources
              (id,mind_node_id,card_id,created_at) VALUES (?,?,?,?)",
@@ -1817,6 +1855,11 @@ mod tests {
             .nodes
             .iter()
             .any(|node| node.id == retained_node.id));
+        assert!(deleted
+            .mindscape
+            .nodes
+            .iter()
+            .any(|node| node.id == unrelated_orphan.id));
         assert!(database.delete_card(&root.id).await.is_err());
     }
 
@@ -1847,6 +1890,50 @@ mod tests {
             .await
             .expect("cancel");
         assert!(database.delete_card(&child.id).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn deleting_a_five_hundred_card_subtree_is_atomic() {
+        let database = Database::in_memory().await.expect("database");
+        let workspace = database
+            .create_project("Large delete")
+            .await
+            .expect("project");
+        let root = workspace.cards[0].clone();
+        let first = database
+            .create_card(&crate::models::CreateCardInput {
+                project_id: workspace.project.id.clone(),
+                source_card_id: root.id.clone(),
+                relation: "child".to_owned(),
+                title: "Card 1".to_owned(),
+                branch_from_turn_id: None,
+                selected_text: None,
+            })
+            .await
+            .expect("first child");
+        let mut parent_id = first.id.clone();
+        for index in 2..=500 {
+            let created = database
+                .create_card(&crate::models::CreateCardInput {
+                    project_id: workspace.project.id.clone(),
+                    source_card_id: parent_id,
+                    relation: "child".to_owned(),
+                    title: format!("Card {index}"),
+                    branch_from_turn_id: None,
+                    selected_text: None,
+                })
+                .await
+                .expect("nested child");
+            parent_id = created.id;
+        }
+
+        let deleted = database
+            .delete_card(&first.id)
+            .await
+            .expect("delete subtree");
+
+        assert_eq!(deleted.workspace.cards, vec![root]);
+        assert!(deleted.workspace.turns.is_empty());
     }
 
     #[tokio::test]
