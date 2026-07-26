@@ -53,6 +53,7 @@ export function App() {
           <p className="eyebrow">Local projects</p>
           {projects.map((project) => (
             <button
+              aria-label={`Open project ${project.title}`}
               className={workspace?.project.id === project.id ? "project active" : "project"}
               key={project.id}
               onClick={() => void selectProject(project.id)}
