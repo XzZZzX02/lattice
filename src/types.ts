@@ -54,6 +54,7 @@ export interface ProjectWorkspace {
   project: Project;
   cards: Card[];
   turns: Turn[];
+  selectionCardLinks: SelectionCardLink[];
 }
 
 export type ModelProvider = "ollama" | "openai_compatible";
@@ -99,6 +100,31 @@ export interface CreateCardInput {
   title: string;
   branchFromTurnId?: string;
   selectedText?: string;
+}
+
+export interface CreateSelectionCardInput {
+  projectId: string;
+  sourceCardId: string;
+  sourceTurnId: string;
+  title: string;
+  selectedText: string;
+  startOffset: number;
+  endOffset: number;
+}
+
+export interface SelectionCardLink {
+  id: string;
+  sourceTurnId: string;
+  targetCardId: string;
+  selectedText: string;
+  startOffset: number;
+  endOffset: number;
+  createdAt: string;
+}
+
+export interface SelectionCardCreation {
+  card: Card;
+  link: SelectionCardLink;
 }
 
 export interface Quote {

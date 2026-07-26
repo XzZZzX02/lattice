@@ -5,9 +5,10 @@ use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use uuid::Uuid;
 
 use crate::models::{
-    Card, CreateCardInput, CreateMindEdgeInput, CreateMindNodeInput, CreateQuoteInput, Document,
-    DocumentChunk, DocumentCitation, MindEdge, MindNode, MindscapeGraph, ModelProfile, Project,
-    ProjectWorkspace, Quote, RetrievedDocumentChunk, SaveModelProfileInput, SearchResult, Turn,
+    Card, CreateCardInput, CreateMindEdgeInput, CreateMindNodeInput, CreateQuoteInput,
+    CreateSelectionCardInput, Document, DocumentChunk, DocumentCitation, MindEdge, MindNode,
+    MindscapeGraph, ModelProfile, Project, ProjectWorkspace, Quote, RetrievedDocumentChunk,
+    SaveModelProfileInput, SearchResult, SelectionCardCreation, SelectionCardLink, Turn,
 };
 
 #[derive(Clone)]
@@ -90,10 +91,22 @@ impl Database {
         .bind(project_id)
         .fetch_all(&self.pool)
         .await?;
+        let selection_card_links = sqlx::query_as::<_, SelectionCardLink>(
+            "SELECT selection_card_links.*
+             FROM selection_card_links
+             JOIN turns ON turns.id = selection_card_links.source_turn_id
+             JOIN cards ON cards.id = turns.card_id
+             WHERE cards.project_id = ?
+             ORDER BY selection_card_links.created_at",
+        )
+        .bind(project_id)
+        .fetch_all(&self.pool)
+        .await?;
         Ok(ProjectWorkspace {
             project,
             cards,
             turns,
+            selection_card_links,
         })
     }
 
@@ -360,6 +373,64 @@ impl Database {
             .bind(id)
             .fetch_one(&self.pool)
             .await
+    }
+
+    pub async fn create_card_from_selection(
+        &self,
+        input: &CreateSelectionCardInput,
+    ) -> Result<SelectionCardCreation, sqlx::Error> {
+        let card_id = Uuid::now_v7().to_string();
+        let link_id = Uuid::now_v7().to_string();
+        let now = Utc::now().to_rfc3339();
+        let mut tx = self.pool.begin().await?;
+        let source: Card = sqlx::query_as(
+            "SELECT cards.* FROM cards
+             JOIN turns ON turns.card_id = cards.id
+             WHERE cards.id = ? AND cards.project_id = ? AND turns.id = ?",
+        )
+        .bind(&input.source_card_id)
+        .bind(&input.project_id)
+        .bind(&input.source_turn_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        sqlx::query(
+            "INSERT INTO cards
+             (id,project_id,parent_id,relation,title,summary,unread,
+              position_x,position_y,created_at,updated_at)
+             VALUES (?,?,?,'child',?,?,1,?,?,?,?)",
+        )
+        .bind(&card_id)
+        .bind(&input.project_id)
+        .bind(&source.id)
+        .bind(&input.title)
+        .bind(format!("Focus excerpt: {}", input.selected_text))
+        .bind(source.position_x)
+        .bind(source.position_y + 180.0)
+        .bind(&now)
+        .bind(&now)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "INSERT INTO selection_card_links
+             (id,source_turn_id,target_card_id,selected_text,start_offset,end_offset,created_at)
+             VALUES (?,?,?,?,?,?,?)",
+        )
+        .bind(&link_id)
+        .bind(&input.source_turn_id)
+        .bind(&card_id)
+        .bind(&input.selected_text)
+        .bind(input.start_offset)
+        .bind(input.end_offset)
+        .bind(&now)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        let card = self.get_card(&card_id).await?;
+        let link = sqlx::query_as("SELECT * FROM selection_card_links WHERE id = ?")
+            .bind(link_id)
+            .fetch_one(&self.pool)
+            .await?;
+        Ok(SelectionCardCreation { card, link })
     }
 
     pub async fn get_card(&self, id: &str) -> Result<Card, sqlx::Error> {
@@ -1451,6 +1522,56 @@ mod tests {
             .attach_quotes(&[second_quote.id], &cross_project_target.id)
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    async fn selection_card_creation_is_atomic_unique_and_loaded_with_workspace() {
+        let database = Database::in_memory().await.expect("database");
+        let workspace = database
+            .create_project("Selection links")
+            .await
+            .expect("project");
+        let root = &workspace.cards[0];
+        let source = database
+            .create_streaming_turn(&root.id, "Explain", "model", "selection-request")
+            .await
+            .expect("source turn");
+        database
+            .update_turn(&source.id, "Alpha **beta** gamma", "completed", None)
+            .await
+            .expect("source answer");
+        let input = crate::models::CreateSelectionCardInput {
+            project_id: workspace.project.id.clone(),
+            source_card_id: root.id.clone(),
+            source_turn_id: source.id.clone(),
+            title: "beta".to_owned(),
+            selected_text: "beta".to_owned(),
+            start_offset: 6,
+            end_offset: 10,
+        };
+
+        let created = database
+            .create_card_from_selection(&input)
+            .await
+            .expect("selection card");
+        assert_eq!(created.card.relation, "child");
+        assert_eq!(created.card.parent_id.as_deref(), Some(root.id.as_str()));
+        assert_eq!(created.link.source_turn_id, source.id);
+        assert_eq!(created.link.target_card_id, created.card.id);
+
+        let loaded = database
+            .get_workspace(&workspace.project.id)
+            .await
+            .expect("workspace");
+        assert_eq!(loaded.selection_card_links, vec![created.link]);
+
+        assert!(database.create_card_from_selection(&input).await.is_err());
+        let after_duplicate = database
+            .get_workspace(&workspace.project.id)
+            .await
+            .expect("workspace after duplicate");
+        assert_eq!(after_duplicate.cards.len(), 2);
+        assert_eq!(after_duplicate.selection_card_links.len(), 1);
     }
 
     #[tokio::test]

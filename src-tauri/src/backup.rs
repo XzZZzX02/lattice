@@ -15,11 +15,11 @@ use crate::{
     documents::DocumentStore,
     models::{
         Card, Document, DocumentChunk, DocumentCitation, Favorite, MindEdge, MindNode,
-        MindNodeSource, Project, ProjectWorkspace, Quote, Turn,
+        MindNodeSource, Project, ProjectWorkspace, Quote, SelectionCardLink, Turn,
     },
 };
 
-const SCHEMA_VERSION: u32 = 3;
+const SCHEMA_VERSION: u32 = 4;
 const MAX_IMPORT_BYTES: u64 = 750 * 1024 * 1024;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -54,6 +54,8 @@ struct ProjectBackup {
     cards: Vec<Card>,
     turns: Vec<Turn>,
     quotes: Vec<Quote>,
+    #[serde(default)]
+    selection_card_links: Vec<SelectionCardLink>,
     favorites: Vec<Favorite>,
     #[serde(default)]
     mind_nodes: Vec<MindNode>,
@@ -153,6 +155,7 @@ async fn collect_backup(database: &Database, project_id: &str) -> Result<Project
         cards: workspace.cards,
         turns: workspace.turns,
         quotes,
+        selection_card_links: workspace.selection_card_links,
         favorites,
         mind_nodes: mindscape.nodes,
         mind_edges: mindscape.edges,
@@ -264,6 +267,35 @@ fn validate_backup(backup: &ProjectBackup) -> Result<(), String> {
         })
     {
         return Err("Project backup has invalid quotes".to_owned());
+    }
+    let selection_link_ids = backup
+        .selection_card_links
+        .iter()
+        .map(|link| link.id.as_str())
+        .collect::<HashSet<_>>();
+    let selection_ranges = backup
+        .selection_card_links
+        .iter()
+        .map(|link| {
+            (
+                link.source_turn_id.as_str(),
+                link.start_offset,
+                link.end_offset,
+            )
+        })
+        .collect::<HashSet<_>>();
+    if selection_link_ids.len() != backup.selection_card_links.len()
+        || selection_ranges.len() != backup.selection_card_links.len()
+        || backup.selection_card_links.iter().any(|link| {
+            link.selected_text.is_empty()
+                || link.start_offset < 0
+                || link.end_offset - link.start_offset
+                    != link.selected_text.encode_utf16().count() as i64
+                || !turn_ids.contains(link.source_turn_id.as_str())
+                || !card_ids.contains(link.target_card_id.as_str())
+        })
+    {
+        return Err("Project backup has invalid selection card links".to_owned());
     }
     let favorite_ids: HashSet<_> = backup
         .favorites
@@ -388,6 +420,13 @@ async fn insert_backup(
     let turn_map = id_map(backup.turns.iter().map(|turn| turn.id.as_str()), collision);
     let quote_map = id_map(
         backup.quotes.iter().map(|quote| quote.id.as_str()),
+        collision,
+    );
+    let selection_link_map = id_map(
+        backup
+            .selection_card_links
+            .iter()
+            .map(|link| link.id.as_str()),
         collision,
     );
     let mind_node_map = id_map(
@@ -519,6 +558,23 @@ async fn insert_backup(
         .bind(quote.start_offset)
         .bind(quote.end_offset)
         .bind(quote.created_at)
+        .execute(&mut *tx)
+        .await
+        .map_err(db_error)?;
+    }
+    for link in backup.selection_card_links {
+        sqlx::query(
+            "INSERT INTO selection_card_links
+             (id,source_turn_id,target_card_id,selected_text,start_offset,end_offset,created_at)
+             VALUES (?,?,?,?,?,?,?)",
+        )
+        .bind(&selection_link_map[link.id.as_str()])
+        .bind(&turn_map[link.source_turn_id.as_str()])
+        .bind(&card_map[link.target_card_id.as_str()])
+        .bind(link.selected_text)
+        .bind(link.start_offset)
+        .bind(link.end_offset)
+        .bind(link.created_at)
         .execute(&mut *tx)
         .await
         .map_err(db_error)?;
@@ -781,6 +837,16 @@ async fn backup_has_collision(database: &Database, backup: &ProjectBackup) -> Re
         .await?
         || ids_collide(
             database,
+            "selection_card_links",
+            &backup
+                .selection_card_links
+                .iter()
+                .map(|link| link.id.clone())
+                .collect::<Vec<_>>(),
+        )
+        .await?
+        || ids_collide(
+            database,
             "favorites",
             &backup
                 .favorites
@@ -947,6 +1013,18 @@ mod tests {
             )
             .await
             .expect("cited turn");
+        let selection = source
+            .create_card_from_selection(&crate::models::CreateSelectionCardInput {
+                project_id: workspace.project.id.clone(),
+                source_card_id: workspace.cards[0].id.clone(),
+                source_turn_id: cited_turn.id.clone(),
+                title: "Evidence".to_owned(),
+                selected_text: "evidence".to_owned(),
+                start_offset: 8,
+                end_offset: 16,
+            })
+            .await
+            .expect("selection card");
         source
             .create_document_citations(&cited_turn.id, &retrieved)
             .await
@@ -964,6 +1042,11 @@ mod tests {
             .expect("import");
         assert_eq!(imported.project.id, workspace.project.id);
         assert_eq!(imported.cards[0].id, workspace.cards[0].id);
+        assert_eq!(imported.selection_card_links.len(), 1);
+        assert_eq!(
+            imported.selection_card_links[0].target_card_id,
+            selection.card.id
+        );
         let imported_graph = target
             .get_mindscape(&imported.project.id)
             .await
@@ -994,6 +1077,10 @@ mod tests {
             .expect("duplicate");
         assert_ne!(duplicate.project.id, workspace.project.id);
         assert_ne!(duplicate.cards[0].id, workspace.cards[0].id);
+        assert_ne!(
+            duplicate.selection_card_links[0].target_card_id,
+            selection.card.id
+        );
         assert!(duplicate.project.title.ends_with("(imported)"));
         let duplicate_graph = target
             .get_mindscape(&duplicate.project.id)
@@ -1038,6 +1125,7 @@ mod tests {
             cards: workspace.cards,
             turns: Vec::new(),
             quotes: Vec::new(),
+            selection_card_links: Vec::new(),
             favorites: Vec::new(),
             mind_nodes: Vec::new(),
             mind_edges: Vec::new(),

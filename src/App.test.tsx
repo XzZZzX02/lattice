@@ -96,7 +96,8 @@ describe("App", () => {
         contextSnapshotHash: "", contextStale: false, unread: false,
         positionX: 0, positionY: 0, createdAt: "", updatedAt: ""
       }],
-      turns: []
+    turns: [],
+    selectionCardLinks: []
     };
     useWorkspaceStore.setState({ projects: [workspace.project], workspace });
 

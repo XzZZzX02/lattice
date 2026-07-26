@@ -3,6 +3,7 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import type {
   Card,
   CreateCardInput,
+  CreateSelectionCardInput,
   CreateQuoteInput,
   DocumentChunk,
   DocumentCitation,
@@ -21,6 +22,7 @@ import type {
   RegeneratedTurn,
   SaveModelProfileInput,
   SearchResult,
+  SelectionCardCreation,
   SendMessageInput,
   StreamEvent,
   Turn
@@ -59,6 +61,8 @@ export const chatApi = {
 export const cardApi = {
   create: (input: CreateCardInput) =>
     invoke<Card>("create_card", { input }),
+  createFromSelection: (input: CreateSelectionCardInput) =>
+    invoke<SelectionCardCreation>("create_card_from_selection", { input }),
   rename: (cardId: string, title: string) =>
     invoke<ProjectWorkspace>("rename_card", { cardId, title })
 };

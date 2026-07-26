@@ -6,10 +6,10 @@ use crate::{
     documents::DocumentStore,
     models::{
         ApplyMindSuggestionsInput, Card, CreateCardInput, CreateMindEdgeInput, CreateMindNodeInput,
-        CreateQuoteInput, Document, DocumentChunk, DocumentCitation, DocumentImportResult,
-        MindEdge, MindNode, MindSuggestionSet, MindscapeGraph, ModelProfile, Project,
-        ProjectWorkspace, Quote, RegeneratedTurn, SaveModelProfileInput, SearchResult,
-        SendMessageInput, StreamEvent, Turn,
+        CreateQuoteInput, CreateSelectionCardInput, Document, DocumentChunk, DocumentCitation,
+        DocumentImportResult, MindEdge, MindNode, MindSuggestionSet, MindscapeGraph, ModelProfile,
+        Project, ProjectWorkspace, Quote, RegeneratedTurn, SaveModelProfileInput, SearchResult,
+        SelectionCardCreation, SendMessageInput, StreamEvent, Turn,
     },
     models_service,
 };
@@ -190,6 +190,36 @@ pub async fn create_card(
         .create_card(&input)
         .await
         .map_err(|_| "Unable to create card".to_owned())
+}
+
+#[tauri::command]
+pub async fn create_card_from_selection(
+    database: State<'_, Database>,
+    input: CreateSelectionCardInput,
+) -> Result<SelectionCardCreation, String> {
+    let selected_length = input.selected_text.encode_utf16().count() as i64;
+    if input.title.trim().is_empty()
+        || input.title.chars().count() > 240
+        || selected_length == 0
+        || selected_length > 8_000
+        || input.start_offset < 0
+        || input.end_offset - input.start_offset != selected_length
+    {
+        return Err("Selected card excerpt is invalid".to_owned());
+    }
+    database
+        .create_card_from_selection(&input)
+        .await
+        .map_err(|error| {
+            if error
+                .as_database_error()
+                .is_some_and(|value| value.is_unique_violation())
+            {
+                "This text already has a card".to_owned()
+            } else {
+                "Unable to create a card from this text".to_owned()
+            }
+        })
 }
 
 #[tauri::command]

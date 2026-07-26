@@ -6,6 +6,7 @@ import {
 import type { ExportFormat } from "../lib/ipc";
 import type {
   CreateCardInput, CreateMindEdgeInput, CreateMindNodeInput, CreateQuoteInput,
+  CreateSelectionCardInput,
   DocumentCitation, LocalDocument, MindscapeGraph, ModelProfile, Project,
   MindSuggestionSet, ProjectWorkspace, Quote, SearchResult, StreamEvent, Turn
 } from "../types";
@@ -36,6 +37,7 @@ interface WorkspaceState {
   cancelMessage: () => Promise<void>;
   selectCard: (cardId: string) => void;
   createCard: (input: CreateCardInput) => Promise<void>;
+  createCardFromSelection: (input: CreateSelectionCardInput) => Promise<void>;
   renameCard: (cardId: string, title: string) => Promise<void>;
   addQuote: (input: CreateQuoteInput) => Promise<void>;
   removeQuote: (quoteId: string) => void;
@@ -208,6 +210,25 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         workspace: state.workspace
           ? { ...state.workspace, cards: [...state.workspace.cards, card] }
           : null
+      }));
+    } catch (error) {
+      set({ error: errorMessage(error) });
+    }
+  },
+  createCardFromSelection: async (input) => {
+    if (!get().workspace) return;
+    try {
+      const created = await cardApi.createFromSelection(input);
+      set((state) => ({
+        activeCardId: created.card.id,
+        workspace: state.workspace && {
+          ...state.workspace,
+          cards: [...state.workspace.cards, created.card],
+          selectionCardLinks: [
+            ...state.workspace.selectionCardLinks,
+            created.link
+          ]
+        }
       }));
     } catch (error) {
       set({ error: errorMessage(error) });
