@@ -4,7 +4,7 @@ use chrono::Utc;
 use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use uuid::Uuid;
 
-use crate::models::{Card, Project, ProjectWorkspace, Turn};
+use crate::models::{Card, ModelProfile, Project, ProjectWorkspace, SaveModelProfileInput, Turn};
 
 #[derive(Clone)]
 pub struct Database {
@@ -125,6 +125,50 @@ impl Database {
     pub fn pool(&self) -> &SqlitePool {
         &self.pool
     }
+
+    pub async fn list_model_profiles(&self) -> Result<Vec<ModelProfile>, sqlx::Error> {
+        sqlx::query_as("SELECT * FROM model_profiles ORDER BY created_at")
+            .fetch_all(&self.pool)
+            .await
+    }
+
+    pub async fn get_model_profile(&self, id: &str) -> Result<ModelProfile, sqlx::Error> {
+        sqlx::query_as("SELECT * FROM model_profiles WHERE id = ?")
+            .bind(id)
+            .fetch_one(&self.pool)
+            .await
+    }
+
+    pub async fn save_model_profile(
+        &self,
+        input: &SaveModelProfileInput,
+        keychain_ref: Option<&str>,
+    ) -> Result<ModelProfile, sqlx::Error> {
+        let id = input
+            .id
+            .clone()
+            .unwrap_or_else(|| Uuid::now_v7().to_string());
+        let now = Utc::now().to_rfc3339();
+        sqlx::query(
+            "INSERT INTO model_profiles (id,name,provider,base_url,model,keychain_ref,created_at,updated_at)
+             VALUES (?,?,?,?,?,?,?,?)
+             ON CONFLICT(id) DO UPDATE SET name=excluded.name, provider=excluded.provider,
+             base_url=excluded.base_url, model=excluded.model,
+             keychain_ref=COALESCE(excluded.keychain_ref, model_profiles.keychain_ref),
+             updated_at=excluded.updated_at",
+        )
+        .bind(&id)
+        .bind(&input.name)
+        .bind(&input.provider)
+        .bind(input.base_url.trim_end_matches('/'))
+        .bind(&input.model)
+        .bind(keychain_ref)
+        .bind(&now)
+        .bind(&now)
+        .execute(&self.pool)
+        .await?;
+        self.get_model_profile(&id).await
+    }
 }
 
 #[cfg(test)]
@@ -166,5 +210,29 @@ mod tests {
             database.list_projects(true).await.expect("list all").len(),
             1
         );
+    }
+
+    #[tokio::test]
+    async fn model_profile_never_persists_api_key() {
+        let database = Database::in_memory().await.expect("database");
+        let profile = database
+            .save_model_profile(
+                &crate::models::SaveModelProfileInput {
+                    id: None,
+                    name: "Local".to_owned(),
+                    provider: "openai_compatible".to_owned(),
+                    base_url: "https://example.test/v1/".to_owned(),
+                    model: "test".to_owned(),
+                    api_key: Some("not-persisted".to_owned()),
+                },
+                Some("credential-ref"),
+            )
+            .await
+            .expect("profile");
+        let serialized = serde_json::to_string(&profile).expect("serialize");
+
+        assert!(!serialized.contains("not-persisted"));
+        assert_eq!(profile.base_url, "https://example.test/v1");
+        assert_eq!(profile.keychain_ref.as_deref(), Some("credential-ref"));
     }
 }

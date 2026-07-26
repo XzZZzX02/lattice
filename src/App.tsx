@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { BrainCircuit, FolderPlus, Library, Plus, Settings2 } from "lucide-react";
 import { useWorkspaceStore } from "./store/workspace";
+import { ModelSettings } from "./components/ModelSettings";
 
 export function App() {
   const { projects, workspace, loading, error, loadProjects, createProject, selectProject } =
     useWorkspaceStore();
   const [isCreating, setIsCreating] = useState(false);
   const [title, setTitle] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     void loadProjects();
@@ -64,7 +66,7 @@ export function App() {
           ))}
           {!loading && projects.length === 0 && <p className="empty-copy">Create a project to begin exploring.</p>}
         </section>
-        <button className="settings"><Settings2 size={17} /> Settings</button>
+        <button className="settings" onClick={() => setSettingsOpen(true)}><Settings2 size={17} /> Settings</button>
       </aside>
       <section className="workspace">
         {error && <div className="error-banner" role="alert">{error}</div>}
@@ -104,6 +106,7 @@ export function App() {
           </section>
         )}
       </section>
+      <ModelSettings open={settingsOpen} onOpenChange={setSettingsOpen} />
     </main>
   );
 }

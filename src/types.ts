@@ -55,3 +55,25 @@ export interface ProjectWorkspace {
   cards: Card[];
   turns: Turn[];
 }
+
+export type ModelProvider = "ollama" | "openai_compatible";
+
+export interface ModelProfile {
+  id: string;
+  name: string;
+  provider: ModelProvider;
+  baseUrl: string;
+  model: string;
+  keychainRef: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SaveModelProfileInput {
+  id?: string;
+  name: string;
+  provider: ModelProvider;
+  baseUrl: string;
+  model: string;
+  apiKey?: string;
+}

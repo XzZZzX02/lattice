@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod db;
 pub mod models;
+pub mod models_service;
 
 use tauri::Manager;
 
@@ -25,7 +26,9 @@ pub fn run() {
             commands::create_project,
             commands::get_workspace,
             commands::rename_project,
-            commands::archive_project
+            commands::archive_project,
+            commands::list_model_profiles,
+            commands::save_model_profile
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Lattice");

@@ -1,5 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Project, ProjectWorkspace } from "../types";
+import type {
+  ModelProfile,
+  Project,
+  ProjectWorkspace,
+  SaveModelProfileInput
+} from "../types";
 
 export const workspaceApi = {
   listProjects: () => invoke<Project[]>("list_projects"),
@@ -11,4 +16,10 @@ export const workspaceApi = {
     invoke<void>("rename_project", { projectId, title }),
   archiveProject: (projectId: string) =>
     invoke<void>("archive_project", { projectId })
+};
+
+export const modelApi = {
+  list: () => invoke<ModelProfile[]>("list_model_profiles"),
+  save: (input: SaveModelProfileInput) =>
+    invoke<ModelProfile>("save_model_profile", { input })
 };
