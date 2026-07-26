@@ -56,6 +56,7 @@ pub struct ProjectWorkspace {
     pub project: Project,
     pub cards: Vec<Card>,
     pub turns: Vec<Turn>,
+    pub selection_card_links: Vec<SelectionCardLink>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq, Eq)]
@@ -128,6 +129,37 @@ pub struct CreateCardInput {
     pub title: String,
     pub branch_from_turn_id: Option<String>,
     pub selected_text: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateSelectionCardInput {
+    pub project_id: String,
+    pub source_card_id: String,
+    pub source_turn_id: String,
+    pub title: String,
+    pub selected_text: String,
+    pub start_offset: i64,
+    pub end_offset: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SelectionCardLink {
+    pub id: String,
+    pub source_turn_id: String,
+    pub target_card_id: String,
+    pub selected_text: String,
+    pub start_offset: i64,
+    pub end_offset: i64,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SelectionCardCreation {
+    pub card: Card,
+    pub link: SelectionCardLink,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow, PartialEq, Eq)]

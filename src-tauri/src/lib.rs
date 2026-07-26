@@ -38,6 +38,7 @@ pub fn run() {
             commands::rename_project,
             commands::archive_project,
             commands::create_card,
+            commands::create_card_from_selection,
             commands::create_quote,
             commands::edit_turn,
             commands::delete_turn,

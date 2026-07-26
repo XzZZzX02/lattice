@@ -14,7 +14,7 @@ vi.mock("../lib/ipc", () => ({
   },
   modelApi: { list: vi.fn() },
   chatApi: { send: vi.fn(), cancel: vi.fn() },
-  cardApi: { create: vi.fn(), rename: vi.fn() },
+  cardApi: { create: vi.fn(), createFromSelection: vi.fn(), rename: vi.fn() },
   quoteApi: { create: vi.fn() },
   turnApi: { edit: vi.fn(), delete: vi.fn(), regenerate: vi.fn() },
   fileApi: { exportProject: vi.fn(), importProject: vi.fn() },
@@ -68,7 +68,8 @@ const workspace: ProjectWorkspace = {
     createdAt: "2026-01-01",
     updatedAt: "2026-01-01"
   }],
-  turns: []
+  turns: [],
+  selectionCardLinks: []
 };
 
 describe("workspace store", () => {
@@ -162,6 +163,154 @@ describe("workspace store", () => {
     vi.mocked(cardApi.rename).mockResolvedValue(renamed);
     await useWorkspaceStore.getState().renameCard("card-1", "Renamed");
     expect(useWorkspaceStore.getState().workspace?.cards[0].title).toBe("Renamed");
+  });
+
+  it("creates one linked child card and enters it immediately", async () => {
+    const child = {
+      ...workspace.cards[0],
+      id: "card-2",
+      parentId: "card-1",
+      relation: "child" as const,
+      title: "selected"
+    };
+    const link = {
+      id: "link-1",
+      sourceTurnId: "turn-1",
+      targetCardId: "card-2",
+      selectedText: "selected",
+      startOffset: 4,
+      endOffset: 12,
+      createdAt: "2026-01-01"
+    };
+    useWorkspaceStore.setState({ workspace });
+    vi.mocked(cardApi.createFromSelection).mockResolvedValue({ card: child, link });
+
+    await useWorkspaceStore.getState().createCardFromSelection({
+      projectId: "project-1",
+      sourceCardId: "card-1",
+      sourceTurnId: "turn-1",
+      title: "selected",
+      selectedText: "selected",
+      startOffset: 4,
+      endOffset: 12
+    });
+
+    expect(useWorkspaceStore.getState().activeCardId).toBe("card-2");
+    expect(useWorkspaceStore.getState().workspace?.cards).toHaveLength(2);
+    expect(useWorkspaceStore.getState().workspace?.selectionCardLinks).toEqual([link]);
+  });
+
+  it("keeps the workspace unchanged when a selection already has a card", async () => {
+    useWorkspaceStore.setState({ workspace, activeCardId: "card-1" });
+    vi.mocked(cardApi.createFromSelection).mockRejectedValue(
+      new Error("This text already has a card")
+    );
+
+    await useWorkspaceStore.getState().createCardFromSelection({
+      projectId: "project-1",
+      sourceCardId: "card-1",
+      sourceTurnId: "turn-1",
+      title: "selected",
+      selectedText: "selected",
+      startOffset: 4,
+      endOffset: 12
+    });
+
+    expect(useWorkspaceStore.getState().activeCardId).toBe("card-1");
+    expect(useWorkspaceStore.getState().workspace).toEqual(workspace);
+    expect(useWorkspaceStore.getState().error).toBe("This text already has a card");
+  });
+
+  it("ignores selection card creation when no project is open", async () => {
+    await useWorkspaceStore.getState().createCardFromSelection({
+      projectId: "project-1",
+      sourceCardId: "card-1",
+      sourceTurnId: "turn-1",
+      title: "selected",
+      selectedText: "selected",
+      startOffset: 4,
+      endOffset: 12
+    });
+
+    expect(cardApi.createFromSelection).not.toHaveBeenCalled();
+    expect(useWorkspaceStore.getState().activeCardId).toBeNull();
+  });
+
+  it("does not append a selection card after the user switches projects", async () => {
+    const otherWorkspace: ProjectWorkspace = {
+      ...workspace,
+      project: { ...workspace.project, id: "project-2", rootCardId: "other-card" },
+      cards: [{ ...workspace.cards[0], id: "other-card", projectId: "project-2" }],
+      selectionCardLinks: []
+    };
+    const child = {
+      ...workspace.cards[0],
+      id: "card-2",
+      parentId: "card-1",
+      relation: "child" as const,
+      title: "selected"
+    };
+    const link = {
+      id: "link-1",
+      sourceTurnId: "turn-1",
+      targetCardId: "card-2",
+      selectedText: "selected",
+      startOffset: 4,
+      endOffset: 12,
+      createdAt: ""
+    };
+    useWorkspaceStore.setState({ workspace, activeCardId: "card-1" });
+    vi.mocked(cardApi.createFromSelection).mockImplementation(async () => {
+      useWorkspaceStore.setState({
+        workspace: otherWorkspace,
+        activeCardId: "other-card"
+      });
+      return { card: child, link };
+    });
+
+    await useWorkspaceStore.getState().createCardFromSelection({
+      projectId: "project-1",
+      sourceCardId: "card-1",
+      sourceTurnId: "turn-1",
+      title: "selected",
+      selectedText: "selected",
+      startOffset: 4,
+      endOffset: 12
+    });
+
+    expect(useWorkspaceStore.getState().activeCardId).toBe("other-card");
+    expect(useWorkspaceStore.getState().workspace).toEqual(otherWorkspace);
+  });
+
+  it("does not surface an old project's selection error after switching", async () => {
+    const otherWorkspace: ProjectWorkspace = {
+      ...workspace,
+      project: { ...workspace.project, id: "project-2", rootCardId: "other-card" },
+      cards: [{ ...workspace.cards[0], id: "other-card", projectId: "project-2" }],
+      selectionCardLinks: []
+    };
+    useWorkspaceStore.setState({ workspace, activeCardId: "card-1" });
+    vi.mocked(cardApi.createFromSelection).mockImplementation(async () => {
+      useWorkspaceStore.setState({
+        workspace: otherWorkspace,
+        activeCardId: "other-card"
+      });
+      throw new Error("Old project failed");
+    });
+
+    await useWorkspaceStore.getState().createCardFromSelection({
+      projectId: "project-1",
+      sourceCardId: "card-1",
+      sourceTurnId: "turn-1",
+      title: "selected",
+      selectedText: "selected",
+      startOffset: 4,
+      endOffset: 12
+    });
+
+    expect(useWorkspaceStore.getState().workspace).toEqual(otherWorkspace);
+    expect(useWorkspaceStore.getState().activeCardId).toBe("other-card");
+    expect(useWorkspaceStore.getState().error).toBeNull();
   });
 
   it("adds and removes a traceable quote", async () => {

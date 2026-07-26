@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
@@ -13,7 +13,7 @@ vi.mock("./lib/ipc", () => ({
   },
   modelApi: { list: vi.fn().mockResolvedValue([]) },
   chatApi: { send: vi.fn(), cancel: vi.fn() },
-  cardApi: { create: vi.fn(), rename: vi.fn() },
+  cardApi: { create: vi.fn(), createFromSelection: vi.fn(), rename: vi.fn() },
   quoteApi: { create: vi.fn() },
   turnApi: { edit: vi.fn(), delete: vi.fn(), regenerate: vi.fn() },
   fileApi: {
@@ -41,6 +41,22 @@ vi.mock("./lib/ipc", () => ({
   }
 }));
 
+const workspaceFixture: ProjectWorkspace = {
+  project: {
+    id: "p1", folderId: null, title: "Research", description: "",
+    systemPrompt: "", defaultModelProfileId: null, rootCardId: "c1",
+    archived: false, createdAt: "", updatedAt: ""
+  },
+  cards: [{
+    id: "c1", projectId: "p1", parentId: null, relation: "root",
+    branchFromTurnId: null, title: "Research", summary: "",
+    contextSnapshotHash: "", contextStale: false, unread: false,
+    positionX: 0, positionY: 0, createdAt: "", updatedAt: ""
+  }],
+  turns: [],
+  selectionCardLinks: []
+};
+
 describe("App", () => {
   beforeEach(() => {
     useWorkspaceStore.setState({
@@ -48,6 +64,8 @@ describe("App", () => {
       workspace: null,
       loading: false,
       error: null,
+      activeCardId: null,
+      pendingQuotes: [],
       documents: [],
       documentCitations: []
       ,mindscape: { nodes: [], edges: [], sources: [] }
@@ -84,25 +102,94 @@ describe("App", () => {
   });
 
   it("renders a selected project and card", () => {
-    const workspace: ProjectWorkspace = {
-      project: {
-        id: "p1", folderId: null, title: "Research", description: "",
-        systemPrompt: "", defaultModelProfileId: null, rootCardId: "c1",
-        archived: false, createdAt: "", updatedAt: ""
-      },
-      cards: [{
-        id: "c1", projectId: "p1", parentId: null, relation: "root",
-        branchFromTurnId: null, title: "Research", summary: "",
-        contextSnapshotHash: "", contextStale: false, unread: false,
-        positionX: 0, positionY: 0, createdAt: "", updatedAt: ""
-      }],
-      turns: []
-    };
-    useWorkspaceStore.setState({ projects: [workspace.project], workspace });
+    useWorkspaceStore.setState({
+      projects: [workspaceFixture.project],
+      workspace: workspaceFixture
+    });
 
     render(<App />);
 
     expect(screen.getByRole("heading", { name: "Research", level: 1 })).toBeInTheDocument();
     expect(screen.getByRole("complementary", { name: "Card tree" })).toBeInTheDocument();
+  });
+
+  it("shows removable quote tags inside the message composer", async () => {
+    const user = userEvent.setup();
+    const removeQuote = vi.fn();
+    useWorkspaceStore.setState({
+      projects: [workspaceFixture.project],
+      workspace: workspaceFixture,
+      pendingQuotes: [{
+        id: "quote-1",
+        turnId: "turn-1",
+        targetTurnId: null,
+        selectedText: "selected context",
+        startOffset: 0,
+        endOffset: 16,
+        createdAt: ""
+      }],
+      removeQuote
+    });
+
+    render(<App />);
+
+    const composer = screen.getByRole("textbox", { name: "Message" }).closest("form");
+    expect(composer).toContainElement(screen.getByText("selected context"));
+    await user.click(screen.getByRole("button", { name: "Remove quote selected context" }));
+    expect(removeQuote).toHaveBeenCalledWith("quote-1");
+  });
+
+  it("opens linked card history from marked assistant text", async () => {
+    const user = userEvent.setup();
+    const linkedWorkspace: ProjectWorkspace = {
+      ...workspaceFixture,
+      cards: [
+        workspaceFixture.cards[0],
+        {
+          ...workspaceFixture.cards[0],
+          id: "c2",
+          parentId: "c1",
+          relation: "child",
+          title: "beta"
+        }
+      ],
+      turns: [
+        {
+          id: "t1", cardId: "c1", userContent: "Explain",
+          assistantContent: "Alpha **beta** gamma", modelProfileId: "m1",
+          status: "completed", errorMessage: null, requestId: null,
+          createdAt: "", updatedAt: ""
+        },
+        {
+          id: "t2", cardId: "c2", userContent: "Why beta?",
+          assistantContent: "Linked history", modelProfileId: "m1",
+          status: "completed", errorMessage: null, requestId: null,
+          createdAt: "", updatedAt: ""
+        }
+      ],
+      selectionCardLinks: [{
+        id: "link-1",
+        sourceTurnId: "t1",
+        targetCardId: "c2",
+        selectedText: "beta",
+        startOffset: 6,
+        endOffset: 10,
+        createdAt: ""
+      }]
+    };
+    useWorkspaceStore.setState({
+      projects: [linkedWorkspace.project],
+      workspace: linkedWorkspace,
+      activeCardId: "c1"
+    });
+
+    render(<App />);
+    window.getSelection()?.removeAllRanges();
+    fireEvent.click(screen.getByRole("button", { name: "Open linked card for beta" }));
+
+    expect(screen.getByRole("complementary", { name: "Linked card beta" })).toBeInTheDocument();
+    expect(screen.getByText("Linked history")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Open card beta" }));
+    expect(useWorkspaceStore.getState().activeCardId).toBe("c2");
   });
 });

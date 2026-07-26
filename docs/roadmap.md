@@ -6,3 +6,4 @@
 - [x] Phase D — Knowledge management
 - [x] Phase E — Documents
 - [x] Phase F — Mindscape
+- [x] Phase G — Selection-linked cards
