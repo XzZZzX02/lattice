@@ -31,6 +31,7 @@ pub fn run() {
             commands::archive_project,
             commands::list_model_profiles,
             commands::save_model_profile,
+            commands::test_model_profile,
             commands::send_message,
             commands::cancel_message
         ])

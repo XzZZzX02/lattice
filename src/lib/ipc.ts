@@ -24,7 +24,9 @@ export const workspaceApi = {
 export const modelApi = {
   list: () => invoke<ModelProfile[]>("list_model_profiles"),
   save: (input: SaveModelProfileInput) =>
-    invoke<ModelProfile>("save_model_profile", { input })
+    invoke<ModelProfile>("save_model_profile", { input }),
+  test: (profileId: string) =>
+    invoke<string[]>("test_model_profile", { profileId })
 };
 
 export const chatApi = {

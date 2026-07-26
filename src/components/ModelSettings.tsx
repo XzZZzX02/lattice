@@ -21,6 +21,7 @@ export function ModelSettings({ open, onOpenChange }: ModelSettingsProps) {
   const [profiles, setProfiles] = useState<ModelProfile[]>([]);
   const [input, setInput] = useState<SaveModelProfileInput>(emptyProfile);
   const [error, setError] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -46,6 +47,17 @@ export function ModelSettings({ open, onOpenChange }: ModelSettingsProps) {
     }
   }
 
+  async function testProfile(profile: ModelProfile) {
+    setError(null);
+    setTestResult(null);
+    try {
+      const models = await modelApi.test(profile.id);
+      setTestResult(`Connected · ${models.length} model${models.length === 1 ? "" : "s"} available`);
+    } catch (reason) {
+      setError(String(reason));
+    }
+  }
+
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
@@ -56,9 +68,14 @@ export function ModelSettings({ open, onOpenChange }: ModelSettingsProps) {
           <Dialog.Close className="dialog-close" aria-label="Close"><X size={18} /></Dialog.Close>
           <div className="profile-list">
             {profiles.map((profile) => (
-              <div key={profile.id}><strong>{profile.name}</strong><span>{profile.model}</span></div>
+              <div key={profile.id}>
+                <strong>{profile.name}</strong>
+                <span>{profile.model}</span>
+                <button onClick={() => void testProfile(profile)}>Test</button>
+              </div>
             ))}
           </div>
+          {testResult && <p className="connection-ok" role="status">{testResult}</p>}
           <form className="model-form" onSubmit={submit}>
             <label>Name<input required maxLength={120} value={input.name} onChange={(e) => update("name", e.target.value)} /></label>
             <label>Provider

@@ -130,6 +130,18 @@ pub async fn save_model_profile(
         .map_err(|_| "Unable to save model profile".to_owned())
 }
 
+#[tauri::command]
+pub async fn test_model_profile(
+    database: State<'_, Database>,
+    profile_id: String,
+) -> Result<Vec<String>, String> {
+    let profile = database
+        .get_model_profile(&profile_id)
+        .await
+        .map_err(|_| "Model profile not found".to_owned())?;
+    models_service::list_remote_models(&profile).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::validate_title;

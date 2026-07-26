@@ -1,6 +1,7 @@
 use keyring::Entry;
 use url::Url;
 
+use crate::models::ModelProfile;
 use crate::models::SaveModelProfileInput;
 
 const KEYCHAIN_SERVICE: &str = "app.lattice.local.models";
@@ -38,11 +39,68 @@ pub fn load_secret(reference: &str) -> Result<String, String> {
         .map_err(|_| "API key is missing from Keychain".to_owned())
 }
 
+pub async fn list_remote_models(profile: &ModelProfile) -> Result<Vec<String>, String> {
+    let endpoint = if profile.provider == "ollama" {
+        format!("{}/api/tags", profile.base_url)
+    } else {
+        format!("{}/models", profile.base_url)
+    };
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .map_err(|_| "Unable to initialize model client".to_owned())?;
+    let mut request = client.get(endpoint);
+    if let Some(reference) = &profile.keychain_ref {
+        request = request.bearer_auth(load_secret(reference)?);
+    }
+    let response = request
+        .send()
+        .await
+        .map_err(|_| "Unable to connect to the model provider".to_owned())?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "Model provider returned HTTP {}",
+            response.status()
+        ));
+    }
+    let payload: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|_| "Model provider returned invalid JSON".to_owned())?;
+    let models = parse_model_list(&profile.provider, &payload);
+    if models.is_empty() {
+        return Err("No models were returned by the provider".to_owned());
+    }
+    Ok(models)
+}
+
+fn parse_model_list(provider: &str, payload: &serde_json::Value) -> Vec<String> {
+    let pointer = if provider == "ollama" {
+        "/models"
+    } else {
+        "/data"
+    };
+    payload
+        .pointer(pointer)
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|item| {
+            if provider == "ollama" {
+                item.get("name")?.as_str()
+            } else {
+                item.get("id")?.as_str()
+            }
+        })
+        .map(str::to_owned)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use crate::models::SaveModelProfileInput;
 
-    use super::validate_model_input;
+    use super::{parse_model_list, validate_model_input};
 
     fn input(base_url: &str) -> SaveModelProfileInput {
         SaveModelProfileInput {
@@ -64,5 +122,16 @@ mod tests {
         let mut unsupported = input("https://example.test");
         unsupported.provider = "unknown".to_owned();
         assert!(validate_model_input(&unsupported).is_err());
+    }
+
+    #[test]
+    fn parses_provider_model_catalogues() {
+        let ollama = serde_json::json!({"models": [{"name": "qwen3"}, {"name": "gemma"}]});
+        let openai = serde_json::json!({"data": [{"id": "model-a"}]});
+        assert_eq!(parse_model_list("ollama", &ollama), vec!["qwen3", "gemma"]);
+        assert_eq!(
+            parse_model_list("openai_compatible", &openai),
+            vec!["model-a"]
+        );
     }
 }
