@@ -8,6 +8,7 @@ import remarkGfm from "remark-gfm";
 import { useWorkspaceStore } from "./store/workspace";
 import { ModelSettings } from "./components/ModelSettings";
 import { CardNavigator } from "./components/CardNavigator";
+import { selectionFromContainer } from "./lib/selection";
 
 export function App() {
   const {
@@ -183,16 +184,15 @@ export function App() {
                     <div
                       className={`message assistant ${turn.status}`}
                       onMouseUp={(event) => {
-                        const selected = window.getSelection();
-                        const text = selected?.toString().trim() ?? "";
-                        if (!text || !selected?.anchorNode || !event.currentTarget.contains(selected.anchorNode)) return;
-                        const startOffset = turn.assistantContent.indexOf(text);
-                        if (startOffset < 0) return;
+                        const selected = selectionFromContainer(
+                          event.currentTarget,
+                          turn.assistantContent,
+                          window.getSelection()
+                        );
+                        if (!selected) return;
                         setSelection({
                           turnId: turn.id,
-                          text,
-                          startOffset,
-                          endOffset: startOffset + text.length
+                          ...selected
                         });
                       }}
                     >

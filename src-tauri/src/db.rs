@@ -233,6 +233,15 @@ impl Database {
     }
 
     pub async fn create_quote(&self, input: &CreateQuoteInput) -> Result<Quote, sqlx::Error> {
+        let source = self.get_turn(&input.turn_id).await?;
+        if !utf16_slice_matches(
+            &source.assistant_content,
+            input.start_offset,
+            input.end_offset,
+            &input.selected_text,
+        ) {
+            return Err(sqlx::Error::RowNotFound);
+        }
         let id = Uuid::now_v7().to_string();
         let now = Utc::now().to_rfc3339();
         sqlx::query(
@@ -259,14 +268,32 @@ impl Database {
         target_turn_id: &str,
     ) -> Result<(), sqlx::Error> {
         let mut tx = self.pool.begin().await?;
+        let target_project_id: String = sqlx::query_scalar(
+            "SELECT cards.project_id FROM turns
+             JOIN cards ON cards.id=turns.card_id WHERE turns.id=?",
+        )
+        .bind(target_turn_id)
+        .fetch_one(&mut *tx)
+        .await?;
         for quote_id in quote_ids {
-            sqlx::query(
-                "UPDATE quotes SET target_turn_id = ? WHERE id = ? AND target_turn_id IS NULL",
+            let result = sqlx::query(
+                "UPDATE quotes SET target_turn_id = ?
+                 WHERE id = ? AND target_turn_id IS NULL
+                 AND EXISTS (
+                   SELECT 1 FROM turns source_turn
+                   JOIN cards source_card ON source_card.id=source_turn.card_id
+                   WHERE source_turn.id=quotes.turn_id
+                     AND source_card.project_id=?
+                 )",
             )
             .bind(target_turn_id)
             .bind(quote_id)
+            .bind(&target_project_id)
             .execute(&mut *tx)
             .await?;
+            if result.rows_affected() != 1 {
+                return Err(sqlx::Error::RowNotFound);
+            }
         }
         tx.commit().await?;
         Ok(())
@@ -479,6 +506,16 @@ impl Database {
         card_id: &str,
         turn_id: &str,
     ) -> Result<bool, sqlx::Error> {
+        sqlx::query(
+            "SELECT 1 FROM turns
+             JOIN cards ON cards.id=turns.card_id
+             WHERE turns.id=? AND turns.card_id=? AND cards.project_id=?",
+        )
+        .bind(turn_id)
+        .bind(card_id)
+        .bind(project_id)
+        .fetch_one(&self.pool)
+        .await?;
         let existing: Option<String> =
             sqlx::query_scalar("SELECT id FROM favorites WHERE project_id=? AND turn_id=? LIMIT 1")
                 .bind(project_id)
@@ -513,6 +550,16 @@ impl Database {
         .fetch_all(&self.pool)
         .await
     }
+}
+
+fn utf16_slice_matches(content: &str, start: i64, end: i64, selected: &str) -> bool {
+    let (Ok(start), Ok(end)) = (usize::try_from(start), usize::try_from(end)) else {
+        return false;
+    };
+    let content = content.encode_utf16().collect::<Vec<_>>();
+    content
+        .get(start..end)
+        .is_some_and(|slice| slice == selected.encode_utf16().collect::<Vec<_>>())
 }
 
 async fn archive_turn_revision(
@@ -773,13 +820,17 @@ mod tests {
             .create_streaming_turn(&workspace.cards[0].id, "source", "model", "request-1")
             .await
             .expect("source turn");
+        database
+            .update_turn(&source.id, "someexcerpt text", "completed", None)
+            .await
+            .expect("source answer");
         let target = database
             .create_streaming_turn(&workspace.cards[0].id, "target", "model", "request-2")
             .await
             .expect("target turn");
         let quote = database
             .create_quote(&crate::models::CreateQuoteInput {
-                turn_id: source.id,
+                turn_id: source.id.clone(),
                 selected_text: "excerpt".to_owned(),
                 start_offset: 4,
                 end_offset: 11,
@@ -801,6 +852,35 @@ mod tests {
             attached[0].target_turn_id.as_deref(),
             Some(target.id.as_str())
         );
+
+        assert!(database
+            .create_quote(&crate::models::CreateQuoteInput {
+                turn_id: source.id.clone(),
+                selected_text: "wrong".to_owned(),
+                start_offset: 4,
+                end_offset: 9,
+            })
+            .await
+            .is_err());
+
+        let second_quote = database
+            .create_quote(&crate::models::CreateQuoteInput {
+                turn_id: source.id,
+                selected_text: "excerpt".to_owned(),
+                start_offset: 4,
+                end_offset: 11,
+            })
+            .await
+            .expect("second quote");
+        let other = database.create_project("Other").await.expect("other");
+        let cross_project_target = database
+            .create_streaming_turn(&other.cards[0].id, "target", "model", "request-3")
+            .await
+            .expect("cross-project target");
+        assert!(database
+            .attach_quotes(&[second_quote.id], &cross_project_target.id)
+            .await
+            .is_err());
     }
 
     #[tokio::test]
@@ -887,5 +967,11 @@ mod tests {
             .toggle_turn_favorite(&workspace.project.id, &workspace.cards[0].id, &turn.id)
             .await
             .expect("unfavorite"));
+
+        let other = database.create_project("Other").await.expect("other");
+        assert!(database
+            .toggle_turn_favorite(&other.project.id, &other.cards[0].id, &turn.id)
+            .await
+            .is_err());
     }
 }

@@ -5,6 +5,7 @@ use std::{
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use sqlx::{QueryBuilder, Sqlite};
 use uuid::Uuid;
 
 use crate::{
@@ -169,10 +170,19 @@ fn validate_backup(backup: &ProjectBackup) -> Result<(), String> {
         .collect();
     if quote_ids.len() != backup.quotes.len()
         || backup.quotes.iter().any(|quote| {
+            let source = backup.turns.iter().find(|turn| turn.id == quote.turn_id);
             quote.selected_text.is_empty()
                 || quote.start_offset < 0
                 || quote.end_offset <= quote.start_offset
                 || !turn_ids.contains(quote.turn_id.as_str())
+                || source.is_none_or(|turn| {
+                    !utf16_slice_matches(
+                        &turn.assistant_content,
+                        quote.start_offset,
+                        quote.end_offset,
+                        &quote.selected_text,
+                    )
+                })
                 || quote
                     .target_turn_id
                     .as_deref()
@@ -209,12 +219,7 @@ async fn insert_backup(
     database: &Database,
     backup: ProjectBackup,
 ) -> Result<ProjectWorkspace, String> {
-    let collision: bool = sqlx::query("SELECT 1 FROM projects WHERE id=?")
-        .bind(&backup.project.id)
-        .fetch_optional(database.pool())
-        .await
-        .map_err(|_| "Unable to inspect project conflicts".to_owned())?
-        .is_some();
+    let collision = backup_has_collision(database, &backup).await?;
     let project_id = if collision {
         Uuid::now_v7().to_string()
     } else {
@@ -348,6 +353,87 @@ async fn insert_backup(
     database.get_workspace(&project_id).await.map_err(db_error)
 }
 
+async fn backup_has_collision(database: &Database, backup: &ProjectBackup) -> Result<bool, String> {
+    if ids_collide(
+        database,
+        "projects",
+        std::slice::from_ref(&backup.project.id),
+    )
+    .await?
+        || ids_collide(
+            database,
+            "cards",
+            &backup
+                .cards
+                .iter()
+                .map(|card| card.id.clone())
+                .collect::<Vec<_>>(),
+        )
+        .await?
+        || ids_collide(
+            database,
+            "turns",
+            &backup
+                .turns
+                .iter()
+                .map(|turn| turn.id.clone())
+                .collect::<Vec<_>>(),
+        )
+        .await?
+        || ids_collide(
+            database,
+            "quotes",
+            &backup
+                .quotes
+                .iter()
+                .map(|quote| quote.id.clone())
+                .collect::<Vec<_>>(),
+        )
+        .await?
+        || ids_collide(
+            database,
+            "favorites",
+            &backup
+                .favorites
+                .iter()
+                .map(|favorite| favorite.id.clone())
+                .collect::<Vec<_>>(),
+        )
+        .await?
+    {
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+async fn ids_collide(
+    database: &Database,
+    table: &'static str,
+    ids: &[String],
+) -> Result<bool, String> {
+    for chunk in ids.chunks(500) {
+        if chunk.is_empty() {
+            continue;
+        }
+        let mut query = QueryBuilder::<Sqlite>::new("SELECT EXISTS(SELECT 1 FROM ");
+        query.push(table).push(" WHERE id IN (");
+        let mut separated = query.separated(", ");
+        for id in chunk {
+            separated.push_bind(id);
+        }
+        separated.push_unseparated("))");
+        if query
+            .build_query_scalar::<bool>()
+            .fetch_one(database.pool())
+            .await
+            .map_err(|_| "Unable to inspect project conflicts".to_owned())?
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 fn parent_first_cards(cards: Vec<Card>) -> Result<Vec<Card>, String> {
     let mut remaining = cards;
     let mut ordered = Vec::with_capacity(remaining.len());
@@ -366,6 +452,17 @@ fn parent_first_cards(cards: Vec<Card>) -> Result<Vec<Card>, String> {
         ordered.push(card);
     }
     Ok(ordered)
+}
+
+fn utf16_slice_matches(content: &str, start: i64, end: i64, selected: &str) -> bool {
+    let (Ok(start), Ok(end)) = (usize::try_from(start), usize::try_from(end)) else {
+        return false;
+    };
+    content
+        .encode_utf16()
+        .collect::<Vec<_>>()
+        .get(start..end)
+        .is_some_and(|slice| slice == selected.encode_utf16().collect::<Vec<_>>())
 }
 
 fn id_map<'a>(ids: impl Iterator<Item = &'a str>, remap: bool) -> HashMap<String, String> {
