@@ -50,6 +50,8 @@ button { color: inherit; }
 .card-title-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 .card-title-row > div { display: flex; gap: 4px; }
 .card-title-row button { border: 0; background: transparent; color: #7f8982; }
+.card-title-row button.delete-card-button { display: flex; align-items: center; gap: 4px; color: #b77e7e; }
+.card-title-row button:disabled { opacity: .35; }
 .stale-warning { padding: 10px 12px; border: 1px solid #6c5936; border-radius: 9px; background: #2c2518; color: #e7c27c; font-size: 12px; }
 .message { margin-top: 24px; line-height: 1.65; }
 .message.user { margin-left: auto; background: #353b37; border-radius: 14px 14px 4px 14px; padding: 12px 15px; width: max-content; max-width: 80%; }
@@ -123,6 +125,11 @@ button { color: inherit; }
 .flow-map { height: 420px; border-radius: 15px; overflow: hidden; background: rgba(15,18,16,.55); }
 .map-node { width: 104px !important; padding: 8px !important; border: 1px solid !important; border-radius: 10px !important; background: #1c211e !important; color: #aeb8b1 !important; font-size: 10px !important; }
 .map-node.active { background: #67e88c !important; color: #07110a !important; font-weight: 750; }
+.card-map-content { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+.card-map-content > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.card-map-content button { flex: 0 0 auto; display: grid; place-items: center; width: 18px; height: 18px; border: 0; border-radius: 5px; background: transparent; color: #a87070; opacity: 0; }
+.map-node:hover .card-map-content button, .card-map-content button:focus-visible { opacity: 1; }
+.card-map-content button:disabled { opacity: .2; }
 .react-flow__controls { background: #222824; border: 1px solid #343c36; box-shadow: none; }
 .react-flow__controls-button { background: #222824; border-color: #343c36; fill: #b5bdb7; }
 .tree { display: grid; justify-items: center; padding-top: 34px; }

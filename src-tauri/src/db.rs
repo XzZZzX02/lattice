@@ -5,10 +5,11 @@ use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use uuid::Uuid;
 
 use crate::models::{
-    Card, CreateCardInput, CreateMindEdgeInput, CreateMindNodeInput, CreateQuoteInput,
-    CreateSelectionCardInput, Document, DocumentChunk, DocumentCitation, MindEdge, MindNode,
-    MindscapeGraph, ModelProfile, Project, ProjectWorkspace, Quote, RetrievedDocumentChunk,
-    SaveModelProfileInput, SearchResult, SelectionCardCreation, SelectionCardLink, Turn,
+    Card, CardDeletionResult, CreateCardInput, CreateMindEdgeInput, CreateMindNodeInput,
+    CreateQuoteInput, CreateSelectionCardInput, Document, DocumentChunk, DocumentCitation,
+    MindEdge, MindNode, MindscapeGraph, ModelProfile, Project, ProjectWorkspace, Quote,
+    RetrievedDocumentChunk, SaveModelProfileInput, SearchResult, SelectionCardCreation,
+    SelectionCardLink, Turn,
 };
 
 #[derive(Clone)]
@@ -517,6 +518,57 @@ impl Database {
         .await?;
         tx.commit().await?;
         self.get_workspace(&card.project_id).await
+    }
+
+    pub async fn delete_card(&self, card_id: &str) -> Result<CardDeletionResult, sqlx::Error> {
+        let card = self.get_card(card_id).await?;
+        if card.relation == "root" {
+            return Err(sqlx::Error::RowNotFound);
+        }
+        let mut tx = self.pool.begin().await?;
+        let streaming_count: i64 = sqlx::query_scalar(
+            "WITH RECURSIVE subtree(id) AS (
+                SELECT id FROM cards WHERE id = ?
+                UNION ALL
+                SELECT cards.id FROM cards JOIN subtree ON cards.parent_id = subtree.id
+             )
+             SELECT COUNT(*) FROM turns
+             WHERE card_id IN (SELECT id FROM subtree) AND status = 'streaming'",
+        )
+        .bind(card_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        if streaming_count > 0 {
+            return Err(sqlx::Error::RowNotFound);
+        }
+        let deleted = sqlx::query("DELETE FROM cards WHERE id = ? AND relation <> 'root'")
+            .bind(card_id)
+            .execute(&mut *tx)
+            .await?;
+        if deleted.rows_affected() != 1 {
+            return Err(sqlx::Error::RowNotFound);
+        }
+        sqlx::query(
+            "DELETE FROM mind_nodes
+             WHERE project_id = ?
+             AND NOT EXISTS (
+                SELECT 1 FROM mind_node_sources
+                WHERE mind_node_sources.mind_node_id = mind_nodes.id
+             )",
+        )
+        .bind(&card.project_id)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query("UPDATE projects SET updated_at = ? WHERE id = ?")
+            .bind(Utc::now().to_rfc3339())
+            .bind(&card.project_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(CardDeletionResult {
+            workspace: self.get_workspace(&card.project_id).await?,
+            mindscape: self.get_mindscape(&card.project_id).await?,
+        })
     }
 
     pub async fn edit_turn(
@@ -1603,6 +1655,198 @@ mod tests {
             .expect("workspace after duplicate");
         assert_eq!(after_duplicate.cards.len(), 2);
         assert_eq!(after_duplicate.selection_card_links.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn deleting_a_child_cascades_its_subtree_and_keeps_traceable_mind_nodes() {
+        let database = Database::in_memory().await.expect("database");
+        let workspace = database.create_project("Delete").await.expect("project");
+        let root = &workspace.cards[0];
+        let child = database
+            .create_card(&crate::models::CreateCardInput {
+                project_id: workspace.project.id.clone(),
+                source_card_id: root.id.clone(),
+                relation: "child".to_owned(),
+                title: "Child".to_owned(),
+                branch_from_turn_id: None,
+                selected_text: None,
+            })
+            .await
+            .expect("child");
+        let grandchild = database
+            .create_card(&crate::models::CreateCardInput {
+                project_id: workspace.project.id.clone(),
+                source_card_id: child.id.clone(),
+                relation: "child".to_owned(),
+                title: "Grandchild".to_owned(),
+                branch_from_turn_id: None,
+                selected_text: None,
+            })
+            .await
+            .expect("grandchild");
+        let sibling = database
+            .create_card(&crate::models::CreateCardInput {
+                project_id: workspace.project.id.clone(),
+                source_card_id: root.id.clone(),
+                relation: "divergent".to_owned(),
+                title: "Sibling".to_owned(),
+                branch_from_turn_id: None,
+                selected_text: None,
+            })
+            .await
+            .expect("sibling");
+        let child_turn = database
+            .create_streaming_turn(&child.id, "Child question", "model", "child-request")
+            .await
+            .expect("child turn");
+        database
+            .update_turn(&child_turn.id, "Child answer", "completed", None)
+            .await
+            .expect("complete child");
+        database
+            .toggle_turn_favorite(&workspace.project.id, &child.id, &child_turn.id)
+            .await
+            .expect("favorite child");
+        database
+            .create_quote(&crate::models::CreateQuoteInput {
+                turn_id: child_turn.id.clone(),
+                selected_text: "Child".to_owned(),
+                start_offset: 0,
+                end_offset: 5,
+            })
+            .await
+            .expect("quote child");
+        let grandchild_turn = database
+            .create_streaming_turn(
+                &grandchild.id,
+                "Grandchild question",
+                "model",
+                "grandchild-request",
+            )
+            .await
+            .expect("grandchild turn");
+        database
+            .update_turn(&grandchild_turn.id, "Grandchild answer", "completed", None)
+            .await
+            .expect("complete grandchild");
+        let root_turn = database
+            .create_streaming_turn(&root.id, "Root question", "model", "root-request")
+            .await
+            .expect("root turn");
+        let root_turn = database
+            .update_turn(&root_turn.id, "Child", "completed", None)
+            .await
+            .expect("complete root");
+        sqlx::query(
+            "INSERT INTO selection_card_links
+             (id,source_turn_id,target_card_id,selected_text,start_offset,end_offset,created_at)
+             VALUES (?,?,?,?,?,?,?)",
+        )
+        .bind(uuid::Uuid::now_v7().to_string())
+        .bind(&root_turn.id)
+        .bind(&child.id)
+        .bind("Child")
+        .bind(0_i64)
+        .bind(5_i64)
+        .bind(chrono::Utc::now().to_rfc3339())
+        .execute(database.pool())
+        .await
+        .expect("selection link");
+        let orphaned_node = database
+            .create_mind_node(&crate::models::CreateMindNodeInput {
+                project_id: workspace.project.id.clone(),
+                label: "Only child".to_owned(),
+                description: String::new(),
+                source_card_id: Some(child.id.clone()),
+                source_turn_id: None,
+            })
+            .await
+            .expect("orphaned node");
+        let retained_node = database
+            .create_mind_node(&crate::models::CreateMindNodeInput {
+                project_id: workspace.project.id.clone(),
+                label: "Shared".to_owned(),
+                description: String::new(),
+                source_card_id: Some(child.id.clone()),
+                source_turn_id: None,
+            })
+            .await
+            .expect("retained node");
+        sqlx::query(
+            "INSERT INTO mind_node_sources
+             (id,mind_node_id,card_id,created_at) VALUES (?,?,?,?)",
+        )
+        .bind(uuid::Uuid::now_v7().to_string())
+        .bind(&retained_node.id)
+        .bind(&sibling.id)
+        .bind(chrono::Utc::now().to_rfc3339())
+        .execute(database.pool())
+        .await
+        .expect("second source");
+
+        let deleted = database.delete_card(&child.id).await.expect("delete");
+
+        assert_eq!(
+            deleted
+                .workspace
+                .cards
+                .iter()
+                .map(|card| card.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![root.id.as_str(), sibling.id.as_str()]
+        );
+        assert_eq!(deleted.workspace.turns, vec![root_turn]);
+        assert!(deleted.workspace.selection_card_links.is_empty());
+        assert!(database
+            .favorite_turn_ids(&workspace.project.id)
+            .await
+            .expect("favorites")
+            .is_empty());
+        assert!(database
+            .search("Grandchild answer", Some(&workspace.project.id))
+            .await
+            .expect("search")
+            .is_empty());
+        assert!(!deleted
+            .mindscape
+            .nodes
+            .iter()
+            .any(|node| node.id == orphaned_node.id));
+        assert!(deleted
+            .mindscape
+            .nodes
+            .iter()
+            .any(|node| node.id == retained_node.id));
+        assert!(database.delete_card(&root.id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn deleting_a_card_with_a_streaming_turn_is_rejected() {
+        let database = Database::in_memory().await.expect("database");
+        let workspace = database.create_project("Delete").await.expect("project");
+        let root = &workspace.cards[0];
+        let child = database
+            .create_card(&crate::models::CreateCardInput {
+                project_id: workspace.project.id,
+                source_card_id: root.id.clone(),
+                relation: "child".to_owned(),
+                title: "Child".to_owned(),
+                branch_from_turn_id: None,
+                selected_text: None,
+            })
+            .await
+            .expect("child");
+        let turn = database
+            .create_streaming_turn(&child.id, "Question", "model", "request")
+            .await
+            .expect("streaming turn");
+
+        assert!(database.delete_card(&child.id).await.is_err());
+        database
+            .update_turn(&turn.id, "", "cancelled", None)
+            .await
+            .expect("cancel");
+        assert!(database.delete_card(&child.id).await.is_ok());
     }
 
     #[tokio::test]

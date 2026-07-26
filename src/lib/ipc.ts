@@ -2,6 +2,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import type {
   Card,
+  CardDeletionResult,
   CreateCardInput,
   CreateSelectionCardInput,
   CreateQuoteInput,
@@ -63,6 +64,8 @@ export const cardApi = {
     invoke<Card>("create_card", { input }),
   createFromSelection: (input: CreateSelectionCardInput) =>
     invoke<SelectionCardCreation>("create_card_from_selection", { input }),
+  delete: (cardId: string) =>
+    invoke<CardDeletionResult>("delete_card", { cardId }),
   rename: (cardId: string, title: string) =>
     invoke<ProjectWorkspace>("rename_card", { cardId, title })
 };

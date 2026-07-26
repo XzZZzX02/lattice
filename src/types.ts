@@ -238,6 +238,11 @@ export interface MindscapeGraph {
   sources: MindNodeSource[];
 }
 
+export interface CardDeletionResult {
+  workspace: ProjectWorkspace;
+  mindscape: MindscapeGraph;
+}
+
 export interface CreateMindNodeInput {
   projectId: string;
   label: string;

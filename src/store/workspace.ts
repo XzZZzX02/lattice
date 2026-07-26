@@ -44,6 +44,7 @@ interface WorkspaceState {
   selectCard: (cardId: string) => void;
   createCard: (input: CreateCardInput) => Promise<void>;
   createCardFromSelection: (input: CreateSelectionCardInput) => Promise<void>;
+  deleteCard: (cardId: string) => Promise<void>;
   renameCard: (cardId: string, title: string) => Promise<void>;
   addQuote: (input: CreateQuoteInput) => Promise<void>;
   removeQuote: (quoteId: string) => void;
@@ -277,6 +278,51 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       });
     } catch (error) {
       if (get().workspace?.project.id === input.projectId) {
+        set({ error: errorMessage(error) });
+      }
+    }
+  },
+  deleteCard: async (cardId) => {
+    const initialWorkspace = get().workspace;
+    const card = initialWorkspace?.cards.find((current) => current.id === cardId);
+    if (!initialWorkspace || !card || card.relation === "root") return;
+    if (get().activeRequestId) {
+      set({ error: "Stop the active response before deleting a card" });
+      return;
+    }
+    try {
+      const result = await cardApi.delete(cardId);
+      const remainingTurnIds = new Set(
+        result.workspace.turns.map((turn) => turn.id)
+      );
+      set((state) => {
+        if (
+          state.workspace?.project.id !== initialWorkspace.project.id
+        ) {
+          return {};
+        }
+        const activeCardStillExists = result.workspace.cards.some(
+          (current) => current.id === state.activeCardId
+        );
+        return {
+          activeCardId: activeCardStillExists
+            ? state.activeCardId
+            : card.parentId,
+          documentCitations: state.documentCitations.filter(
+            (citation) => remainingTurnIds.has(citation.turnId)
+          ),
+          favoriteTurnIds: state.favoriteTurnIds.filter((turnId) =>
+            remainingTurnIds.has(turnId)
+          ),
+          mindscape: result.mindscape,
+          pendingQuotes: state.pendingQuotes.filter((quote) =>
+            remainingTurnIds.has(quote.turnId)
+          ),
+          workspace: result.workspace
+        };
+      });
+    } catch (error) {
+      if (get().workspace?.project.id === initialWorkspace.project.id) {
         set({ error: errorMessage(error) });
       }
     }

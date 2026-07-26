@@ -14,7 +14,12 @@ vi.mock("../lib/ipc", () => ({
   },
   modelApi: { list: vi.fn() },
   chatApi: { send: vi.fn(), cancel: vi.fn() },
-  cardApi: { create: vi.fn(), createFromSelection: vi.fn(), rename: vi.fn() },
+  cardApi: {
+    create: vi.fn(),
+    createFromSelection: vi.fn(),
+    delete: vi.fn(),
+    rename: vi.fn()
+  },
   quoteApi: { create: vi.fn() },
   turnApi: { edit: vi.fn(), delete: vi.fn(), regenerate: vi.fn() },
   fileApi: { exportProject: vi.fn(), importProject: vi.fn() },
@@ -214,6 +219,59 @@ describe("workspace store", () => {
     vi.mocked(cardApi.rename).mockResolvedValue(renamed);
     await useWorkspaceStore.getState().renameCard("card-1", "Renamed");
     expect(useWorkspaceStore.getState().workspace?.cards[0].title).toBe("Renamed");
+  });
+
+  it("deletes a subtree, selects its parent, and filters derived state", async () => {
+    const child = {
+      ...workspace.cards[0],
+      id: "card-2",
+      parentId: "card-1",
+      relation: "child" as const,
+      title: "Child"
+    };
+    const deletedTurn = {
+      id: "turn-2", cardId: "card-2", userContent: "Question",
+      assistantContent: "Answer", modelProfileId: "m1",
+      status: "completed" as const, errorMessage: null, requestId: null,
+      createdAt: "", updatedAt: ""
+    };
+    const before = {
+      ...workspace,
+      cards: [...workspace.cards, child],
+      turns: [deletedTurn],
+      selectionCardLinks: [{
+        id: "link-1", sourceTurnId: "source", targetCardId: "card-2",
+        selectedText: "Child", startOffset: 0, endOffset: 5, createdAt: ""
+      }]
+    };
+    const after = { ...workspace, turns: [] };
+    const mindscape = { nodes: [], edges: [], sources: [] };
+    vi.mocked(cardApi.delete).mockResolvedValue({ workspace: after, mindscape });
+    useWorkspaceStore.setState({
+      workspace: before,
+      activeCardId: "card-2",
+      pendingQuotes: [{
+        id: "quote-1", turnId: "turn-2", targetTurnId: null,
+        selectedText: "Answer", startOffset: 0, endOffset: 6, createdAt: ""
+      }],
+      favoriteTurnIds: ["turn-2"],
+      documentCitations: [{
+        id: "citation-1", turnId: "turn-2", chunkId: null,
+        documentId: "document-1", documentName: "Source",
+        pageNumber: null, headingPath: "[]", startOffset: 0,
+        endOffset: 6, excerpt: "Answer", available: false, createdAt: ""
+      }]
+    });
+
+    await useWorkspaceStore.getState().deleteCard("card-2");
+
+    const state = useWorkspaceStore.getState();
+    expect(state.activeCardId).toBe("card-1");
+    expect(state.workspace).toEqual(after);
+    expect(state.pendingQuotes).toEqual([]);
+    expect(state.favoriteTurnIds).toEqual([]);
+    expect(state.documentCitations).toEqual([]);
+    expect(state.mindscape).toEqual(mindscape);
   });
 
   it("creates one linked child card and enters it immediately", async () => {

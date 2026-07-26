@@ -317,6 +317,13 @@ pub struct MindscapeGraph {
     pub sources: Vec<MindNodeSource>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CardDeletionResult {
+    pub workspace: ProjectWorkspace,
+    pub mindscape: MindscapeGraph,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateMindNodeInput {

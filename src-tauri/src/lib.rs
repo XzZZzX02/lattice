@@ -42,6 +42,7 @@ pub fn run() {
             commands::create_quote,
             commands::edit_turn,
             commands::delete_turn,
+            commands::delete_card,
             commands::regenerate_turn,
             commands::search,
             commands::toggle_turn_favorite,

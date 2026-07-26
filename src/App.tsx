@@ -15,6 +15,7 @@ import {
   LinkedCardPreview,
   LinkedMarkdown
 } from "./components/SelectionLinkedCard";
+import { summarizeCardSubtree } from "./lib/cardTree";
 import type { SelectionAnchor } from "./lib/floating";
 import { selectionFromContainer } from "./lib/selection";
 
@@ -23,7 +24,7 @@ export function App() {
     projects, workspace, loading, error, modelProfiles, activeModelProfileId,
     activeRequestId, activeRequestCardId, activeCardId, pendingQuotes, loadProjects, createProject,
     selectProject, loadModels, setActiveModel, sendMessage, cancelMessage,
-    createCard, createCardFromSelection, selectCard, renameCard, addQuote, removeQuote, editTurn,
+    createCard, createCardFromSelection, deleteCard, selectCard, renameCard, addQuote, removeQuote, editTurn,
     deleteTurn, regenerateTurn, search, searchResults, favoriteTurnIds,
     toggleFavorite, exportProject, importProject, documents, importDocument,
     deleteDocument, documentCitations, mindscape, addMindNode, addMindEdge,
@@ -123,6 +124,31 @@ export function App() {
   function clearSelection() {
     setSelection(null);
     window.getSelection()?.removeAllRanges();
+  }
+
+  async function confirmCardDeletion(cardId: string) {
+    if (!workspace || activeRequestId) return;
+    const card = workspace.cards.find((current) => current.id === cardId);
+    const summary = summarizeCardSubtree(
+      workspace.cards,
+      workspace.turns,
+      cardId
+    );
+    if (!card || card.relation === "root" || !summary) return;
+    const confirmed = window.confirm(
+      `Delete “${card.title}”? This permanently removes `
+      + `${summary.cardCount} card${summary.cardCount === 1 ? "" : "s"} `
+      + `and ${summary.turnCount} message${summary.turnCount === 1 ? "" : "s"}. `
+      + "This cannot be undone."
+    );
+    if (!confirmed) return;
+    await deleteCard(cardId);
+    if (
+      linkedCard
+      && summary.cardIds.includes(linkedCard.id)
+    ) {
+      setLinkedPreview(null);
+    }
   }
 
   function addToMindscape(
@@ -255,6 +281,18 @@ export function App() {
                       const title = window.prompt("Card title", activeCard.title);
                       if (title?.trim()) void renameCard(activeCard.id, title);
                     }}>Rename</button>
+                    {activeCard?.relation !== "root" && (
+                      <button
+                        aria-label={`Delete card ${activeCard?.title ?? ""}`}
+                        className="delete-card-button"
+                        disabled={activeRequestId !== null}
+                        onClick={() => {
+                          if (activeCard) void confirmCardDeletion(activeCard.id);
+                        }}
+                      >
+                        <Trash2 size={12} /> Delete
+                      </button>
+                    )}
                   </div>
                 </div>
                 {activeCard?.contextStale && <p className="stale-warning">Context changed upstream. Generate again to refresh this branch.</p>}
@@ -396,6 +434,8 @@ export function App() {
                   <CardNavigator
                     cards={workspace.cards}
                     activeCardId={activeCardId}
+                    deletionDisabled={activeRequestId !== null}
+                    onDelete={(cardId) => void confirmCardDeletion(cardId)}
                     onSelect={selectCard}
                   />
                 ) : (

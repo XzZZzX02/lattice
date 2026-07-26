@@ -33,6 +33,10 @@ impl RequestRegistry {
         }
     }
 
+    pub async fn has_active(&self) -> bool {
+        !self.requests.lock().await.is_empty()
+    }
+
     async fn remove(&self, request_id: &str) {
         self.requests.lock().await.remove(request_id);
     }
@@ -340,7 +344,9 @@ mod tests {
             )
             .await;
         assert!(registry.cancel("request").await);
+        assert!(registry.has_active().await);
         registry.remove("request").await;
+        assert!(!registry.has_active().await);
         assert!(!registry.cancel("request").await);
     }
 }
