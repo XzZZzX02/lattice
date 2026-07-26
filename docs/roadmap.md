@@ -1,6 +1,6 @@
 # Implementation roadmap
 
-- [ ] Phase A — Foundation
+- [x] Phase A — Foundation
 - [ ] Phase B — Chat
 - [ ] Phase C — Branching
 - [ ] Phase D — Knowledge management
