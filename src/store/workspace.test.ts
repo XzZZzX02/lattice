@@ -14,7 +14,12 @@ vi.mock("../lib/ipc", () => ({
   },
   modelApi: { list: vi.fn() },
   chatApi: { send: vi.fn(), cancel: vi.fn() },
-  cardApi: { create: vi.fn(), createFromSelection: vi.fn(), rename: vi.fn() },
+  cardApi: {
+    create: vi.fn(),
+    createFromSelection: vi.fn(),
+    delete: vi.fn(),
+    rename: vi.fn()
+  },
   quoteApi: { create: vi.fn() },
   turnApi: { edit: vi.fn(), delete: vi.fn(), regenerate: vi.fn() },
   fileApi: { exportProject: vi.fn(), importProject: vi.fn() },
@@ -83,6 +88,7 @@ describe("workspace store", () => {
       ,modelProfiles: [],
       activeModelProfileId: null,
       activeRequestId: null
+      ,activeRequestCardId: null
       ,activeCardId: null
       ,pendingQuotes: []
       ,favoriteTurnIds: [],
@@ -117,20 +123,106 @@ describe("workspace store", () => {
       onEvent({ type: "completed", requestId: "r1", turn: { ...turn, assistantContent: "world", status: "completed" } });
       return { ...turn, assistantContent: "world", status: "completed" };
     });
-    await useWorkspaceStore.getState().sendMessage("card-1", "hello");
+    await useWorkspaceStore.getState().sendMessage("card-1", "hello", {
+      quoteIds: []
+    });
     expect(useWorkspaceStore.getState().workspace?.turns[0].assistantContent).toBe("world");
     expect(useWorkspaceStore.getState().activeRequestId).toBeNull();
+    expect(useWorkspaceStore.getState().activeRequestCardId).toBeNull();
   });
 
   it("cancels the active request and handles missing configuration", async () => {
     useWorkspaceStore.setState({ activeModelProfileId: null });
-    await useWorkspaceStore.getState().sendMessage("card-1", "hello");
+    await useWorkspaceStore.getState().sendMessage("card-1", "hello", {
+      quoteIds: []
+    });
     expect(useWorkspaceStore.getState().error).toContain("Configure");
 
     useWorkspaceStore.setState({ activeRequestId: "r1" });
     vi.mocked(chatApi.cancel).mockResolvedValue();
     await useWorkspaceStore.getState().cancelMessage();
     expect(chatApi.cancel).toHaveBeenCalledWith("r1");
+  });
+
+  it("blocks a second send before the first request emits its started event", async () => {
+    let finishRequest: (() => void) | undefined;
+    const turn = {
+      id: "turn-pending", cardId: "card-1", userContent: "first",
+      assistantContent: "done", modelProfileId: "m1",
+      status: "completed" as const, errorMessage: null, requestId: "request-1",
+      createdAt: "", updatedAt: ""
+    };
+    vi.mocked(chatApi.send).mockImplementation(
+      () => new Promise((resolve) => {
+        finishRequest = () => resolve(turn);
+      })
+    );
+    useWorkspaceStore.setState({
+      workspace,
+      activeModelProfileId: "m1"
+    });
+
+    const first = useWorkspaceStore.getState().sendMessage(
+      "card-1",
+      "first",
+      { quoteIds: [] }
+    );
+    await useWorkspaceStore.getState().sendMessage(
+      "card-1",
+      "second",
+      { quoteIds: [] }
+    );
+
+    expect(chatApi.send).toHaveBeenCalledOnce();
+    expect(useWorkspaceStore.getState().activeRequestCardId).toBe("card-1");
+    finishRequest?.();
+    await first;
+    expect(useWorkspaceStore.getState().activeRequestCardId).toBeNull();
+  });
+
+  it("sends only explicit quotes and ignores events after switching projects", async () => {
+    const otherWorkspace: ProjectWorkspace = {
+      ...workspace,
+      project: { ...workspace.project, id: "project-2", rootCardId: "other-card" },
+      cards: [{ ...workspace.cards[0], id: "other-card", projectId: "project-2" }]
+    };
+    const pendingQuote = {
+      id: "quote-1",
+      turnId: "source",
+      targetTurnId: null,
+      selectedText: "pending",
+      startOffset: 0,
+      endOffset: 7,
+      createdAt: ""
+    };
+    useWorkspaceStore.setState({
+      workspace,
+      activeModelProfileId: "m1",
+      pendingQuotes: [pendingQuote]
+    });
+    vi.mocked(chatApi.send).mockImplementation(async (input, onEvent) => {
+      expect(input.quoteIds).toEqual([]);
+      useWorkspaceStore.setState({ workspace: otherWorkspace });
+      const turn = {
+        id: "late-turn", cardId: "card-1", userContent: input.content,
+        assistantContent: "", modelProfileId: "m1", status: "streaming" as const,
+        errorMessage: null, requestId: "late-request", createdAt: "", updatedAt: ""
+      };
+      onEvent({ type: "started", requestId: "late-request", turn });
+      onEvent({
+        type: "completed",
+        requestId: "late-request",
+        turn: { ...turn, assistantContent: "late", status: "completed" }
+      });
+      return { ...turn, assistantContent: "late", status: "completed" };
+    });
+
+    await useWorkspaceStore.getState().sendMessage("card-1", "follow up", {
+      quoteIds: []
+    });
+
+    expect(useWorkspaceStore.getState().workspace).toEqual(otherWorkspace);
+    expect(useWorkspaceStore.getState().pendingQuotes).toEqual([pendingQuote]);
   });
 
   it("creates, selects, and renames cards", async () => {
@@ -163,6 +255,59 @@ describe("workspace store", () => {
     vi.mocked(cardApi.rename).mockResolvedValue(renamed);
     await useWorkspaceStore.getState().renameCard("card-1", "Renamed");
     expect(useWorkspaceStore.getState().workspace?.cards[0].title).toBe("Renamed");
+  });
+
+  it("deletes a subtree, selects its parent, and filters derived state", async () => {
+    const child = {
+      ...workspace.cards[0],
+      id: "card-2",
+      parentId: "card-1",
+      relation: "child" as const,
+      title: "Child"
+    };
+    const deletedTurn = {
+      id: "turn-2", cardId: "card-2", userContent: "Question",
+      assistantContent: "Answer", modelProfileId: "m1",
+      status: "completed" as const, errorMessage: null, requestId: null,
+      createdAt: "", updatedAt: ""
+    };
+    const before = {
+      ...workspace,
+      cards: [...workspace.cards, child],
+      turns: [deletedTurn],
+      selectionCardLinks: [{
+        id: "link-1", sourceTurnId: "source", targetCardId: "card-2",
+        selectedText: "Child", startOffset: 0, endOffset: 5, createdAt: ""
+      }]
+    };
+    const after = { ...workspace, turns: [] };
+    const mindscape = { nodes: [], edges: [], sources: [] };
+    vi.mocked(cardApi.delete).mockResolvedValue({ workspace: after, mindscape });
+    useWorkspaceStore.setState({
+      workspace: before,
+      activeCardId: "card-2",
+      pendingQuotes: [{
+        id: "quote-1", turnId: "turn-2", targetTurnId: null,
+        selectedText: "Answer", startOffset: 0, endOffset: 6, createdAt: ""
+      }],
+      favoriteTurnIds: ["turn-2"],
+      documentCitations: [{
+        id: "citation-1", turnId: "turn-2", chunkId: null,
+        documentId: "document-1", documentName: "Source",
+        pageNumber: null, headingPath: "[]", startOffset: 0,
+        endOffset: 6, excerpt: "Answer", available: false, createdAt: ""
+      }]
+    });
+
+    await useWorkspaceStore.getState().deleteCard("card-2");
+
+    const state = useWorkspaceStore.getState();
+    expect(state.activeCardId).toBe("card-1");
+    expect(state.workspace).toEqual(after);
+    expect(state.pendingQuotes).toEqual([]);
+    expect(state.favoriteTurnIds).toEqual([]);
+    expect(state.documentCitations).toEqual([]);
+    expect(state.mindscape).toEqual(mindscape);
   });
 
   it("creates one linked child card and enters it immediately", async () => {

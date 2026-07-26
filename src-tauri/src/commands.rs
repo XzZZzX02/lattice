@@ -5,11 +5,12 @@ use crate::{
     db::Database,
     documents::DocumentStore,
     models::{
-        ApplyMindSuggestionsInput, Card, CreateCardInput, CreateMindEdgeInput, CreateMindNodeInput,
-        CreateQuoteInput, CreateSelectionCardInput, Document, DocumentChunk, DocumentCitation,
-        DocumentImportResult, MindEdge, MindNode, MindSuggestionSet, MindscapeGraph, ModelProfile,
-        Project, ProjectWorkspace, Quote, RegeneratedTurn, SaveModelProfileInput, SearchResult,
-        SelectionCardCreation, SendMessageInput, StreamEvent, Turn,
+        ApplyMindSuggestionsInput, Card, CardDeletionResult, CreateCardInput, CreateMindEdgeInput,
+        CreateMindNodeInput, CreateQuoteInput, CreateSelectionCardInput, Document, DocumentChunk,
+        DocumentCitation, DocumentImportResult, MindEdge, MindNode, MindSuggestionSet,
+        MindscapeGraph, ModelProfile, Project, ProjectWorkspace, Quote, RegeneratedTurn,
+        SaveModelProfileInput, SearchResult, SelectionCardCreation, SendMessageInput, StreamEvent,
+        Turn,
     },
     models_service,
 };
@@ -357,6 +358,28 @@ pub async fn rename_card(
         .rename_card(&card_id, title)
         .await
         .map_err(|_| "Unable to rename card".to_owned())
+}
+
+#[tauri::command]
+pub async fn delete_card(
+    database: State<'_, Database>,
+    requests: State<'_, RequestRegistry>,
+    card_id: String,
+) -> Result<CardDeletionResult, String> {
+    let card = database
+        .get_card(&card_id)
+        .await
+        .map_err(|_| "Card not found".to_owned())?;
+    if card.relation == "root" {
+        return Err("The root card cannot be deleted".to_owned());
+    }
+    if requests.has_active().await {
+        return Err("Stop the active response before deleting a card".to_owned());
+    }
+    database
+        .delete_card(&card_id)
+        .await
+        .map_err(|_| "Unable to delete the card subtree".to_owned())
 }
 
 #[tauri::command]

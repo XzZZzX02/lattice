@@ -88,10 +88,16 @@ describe("LinkedCardPreview", () => {
     const onOpenCard = vi.fn();
     render(
       <LinkedCardPreview
+        activeRequestCardId={null}
         anchor={{ left: 20, right: 60, top: 80, bottom: 100 }}
         card={card}
+        deletionDisabled={false}
+        modelConfigured
+        onCancel={vi.fn()}
+        onDelete={vi.fn()}
         onDismiss={vi.fn()}
         onOpenCard={onOpenCard}
+        onSendMessage={vi.fn()}
         turns={[turn, { ...turn, id: "turn-3", assistantContent: "" }]}
       />
     );
@@ -106,10 +112,16 @@ describe("LinkedCardPreview", () => {
   it("shows an empty state before the new card has messages", () => {
     render(
       <LinkedCardPreview
+        activeRequestCardId={null}
         anchor={{ left: 20, right: 60, top: 80, bottom: 100 }}
         card={card}
+        deletionDisabled={false}
+        modelConfigured
+        onCancel={vi.fn()}
+        onDelete={vi.fn()}
         onDismiss={vi.fn()}
         onOpenCard={vi.fn()}
+        onSendMessage={vi.fn()}
         turns={[]}
       />
     );
@@ -121,10 +133,16 @@ describe("LinkedCardPreview", () => {
     const onDismiss = vi.fn();
     const { unmount } = render(
       <LinkedCardPreview
+        activeRequestCardId={null}
         anchor={{ left: 1000, right: 1010, top: 80, bottom: 100 }}
         card={card}
+        deletionDisabled={false}
+        modelConfigured
+        onCancel={vi.fn()}
+        onDelete={vi.fn()}
         onDismiss={onDismiss}
         onOpenCard={vi.fn()}
+        onSendMessage={vi.fn()}
         turns={[]}
       />
     );
@@ -137,5 +155,122 @@ describe("LinkedCardPreview", () => {
     fireEvent.pointerDown(document.body);
     expect(onDismiss).toHaveBeenCalledTimes(3);
     unmount();
+  });
+
+  it("sends an independent follow-up and stays open", async () => {
+    const user = userEvent.setup();
+    const onSendMessage = vi.fn().mockResolvedValue(undefined);
+    render(
+      <LinkedCardPreview
+        activeRequestCardId={null}
+        anchor={{ left: 20, right: 60, top: 80, bottom: 100 }}
+        card={card}
+        deletionDisabled={false}
+        modelConfigured
+        onCancel={vi.fn()}
+        onDelete={vi.fn()}
+        onDismiss={vi.fn()}
+        onOpenCard={vi.fn()}
+        onSendMessage={onSendMessage}
+        turns={[turn]}
+      />
+    );
+
+    const input = screen.getByRole("textbox", { name: "Follow up in beta" });
+    await user.type(input, "What follows?");
+    await user.keyboard("{Meta>}{Enter}{/Meta}");
+
+    expect(onSendMessage).toHaveBeenCalledWith("card-2", "What follows?");
+    expect(input).toHaveValue("");
+    expect(screen.getByRole("complementary", { name: "Linked card beta" })).toBeInTheDocument();
+  });
+
+  it("stops its own request and blocks sending without a model", async () => {
+    const user = userEvent.setup();
+    const onCancel = vi.fn();
+    const { rerender } = render(
+      <LinkedCardPreview
+        activeRequestCardId="card-2"
+        anchor={{ left: 20, right: 60, top: 80, bottom: 100 }}
+        card={card}
+        deletionDisabled={false}
+        modelConfigured
+        onCancel={onCancel}
+        onDelete={vi.fn()}
+        onDismiss={vi.fn()}
+        onOpenCard={vi.fn()}
+        onSendMessage={vi.fn()}
+        turns={[{ ...turn, status: "streaming" }]}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "Stop linked card response" }));
+    expect(onCancel).toHaveBeenCalledOnce();
+
+    rerender(
+      <LinkedCardPreview
+        activeRequestCardId={null}
+        anchor={{ left: 20, right: 60, top: 80, bottom: 100 }}
+        card={card}
+        deletionDisabled={false}
+        modelConfigured={false}
+        onCancel={vi.fn()}
+        onDelete={vi.fn()}
+        onDismiss={vi.fn()}
+        onOpenCard={vi.fn()}
+        onSendMessage={vi.fn()}
+        turns={[turn]}
+      />
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Follow up in beta" }),
+      "Question"
+    );
+    expect(screen.getByRole("button", { name: "Send linked card follow-up" })).toBeDisabled();
+    expect(screen.getByText("Configure a model to follow up.")).toBeInTheDocument();
+  });
+
+  it("deletes from the preview and resets its draft when the linked card changes", async () => {
+    const user = userEvent.setup();
+    const onDelete = vi.fn();
+    const { rerender } = render(
+      <LinkedCardPreview
+        activeRequestCardId={null}
+        anchor={{ left: 20, right: 60, top: 80, bottom: 100 }}
+        card={card}
+        deletionDisabled={false}
+        modelConfigured
+        onCancel={vi.fn()}
+        onDelete={onDelete}
+        onDismiss={vi.fn()}
+        onOpenCard={vi.fn()}
+        onSendMessage={vi.fn()}
+        turns={[turn]}
+      />
+    );
+    const input = screen.getByRole("textbox", { name: "Follow up in beta" });
+    await user.type(input, "card-specific draft");
+    await user.click(screen.getByRole("button", { name: "Delete linked card beta" }));
+    expect(onDelete).toHaveBeenCalledWith("card-2");
+
+    const nextCard = { ...card, id: "card-3", title: "gamma" };
+    rerender(
+      <LinkedCardPreview
+        activeRequestCardId={null}
+        anchor={{ left: 20, right: 60, top: 80, bottom: 100 }}
+        card={nextCard}
+        deletionDisabled={false}
+        modelConfigured
+        onCancel={vi.fn()}
+        onDelete={onDelete}
+        onDismiss={vi.fn()}
+        onOpenCard={vi.fn()}
+        onSendMessage={vi.fn()}
+        turns={[]}
+      />
+    );
+    expect(
+      screen.getByRole("textbox", { name: "Follow up in gamma" })
+    ).toHaveValue("");
   });
 });

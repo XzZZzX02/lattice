@@ -13,7 +13,12 @@ vi.mock("./lib/ipc", () => ({
   },
   modelApi: { list: vi.fn().mockResolvedValue([]) },
   chatApi: { send: vi.fn(), cancel: vi.fn() },
-  cardApi: { create: vi.fn(), createFromSelection: vi.fn(), rename: vi.fn() },
+  cardApi: {
+    create: vi.fn(),
+    createFromSelection: vi.fn(),
+    delete: vi.fn(),
+    rename: vi.fn()
+  },
   quoteApi: { create: vi.fn() },
   turnApi: { edit: vi.fn(), delete: vi.fn(), regenerate: vi.fn() },
   fileApi: {
@@ -65,6 +70,8 @@ describe("App", () => {
       loading: false,
       error: null,
       activeCardId: null,
+      activeRequestId: null,
+      activeRequestCardId: null,
       pendingQuotes: [],
       documents: [],
       documentCitations: []
@@ -191,5 +198,53 @@ describe("App", () => {
     expect(screen.getByText("Linked history")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Open card beta" }));
     expect(useWorkspaceStore.getState().activeCardId).toBe("c2");
+  });
+
+  it("deletes the active child only after showing subtree counts", async () => {
+    const user = userEvent.setup();
+    const child = {
+      ...workspaceFixture.cards[0],
+      id: "c2",
+      parentId: "c1",
+      relation: "child" as const,
+      title: "Child"
+    };
+    const childTurn = {
+      id: "t2", cardId: "c2", userContent: "Question",
+      assistantContent: "Answer", modelProfileId: "m1",
+      status: "completed" as const, errorMessage: null, requestId: null,
+      createdAt: "", updatedAt: ""
+    };
+    const deleteCard = vi.fn().mockResolvedValue(undefined);
+    useWorkspaceStore.setState({
+      projects: [workspaceFixture.project],
+      workspace: {
+        ...workspaceFixture,
+        cards: [...workspaceFixture.cards, child],
+        turns: [childTurn]
+      },
+      activeCardId: "c2",
+      deleteCard
+    });
+
+    render(<App />);
+    await user.click(
+      screen.getAllByRole("button", { name: "Delete card Child" })[0]
+    );
+
+    expect(deleteCard).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("dialog", { name: "Delete Child" });
+    expect(dialog).toHaveTextContent(
+      "This permanently removes 1 card, 0 descendants, and 1 message."
+    );
+    await user.click(screen.getByRole("button", { name: "Cancel card deletion" }));
+    expect(screen.queryByRole("dialog", { name: "Delete Child" })).not.toBeInTheDocument();
+    expect(deleteCard).not.toHaveBeenCalled();
+
+    await user.click(
+      screen.getAllByRole("button", { name: "Delete card Child" })[0]
+    );
+    await user.click(screen.getByRole("button", { name: "Delete permanently" }));
+    expect(deleteCard).toHaveBeenCalledWith("c2");
   });
 });

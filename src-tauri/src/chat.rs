@@ -20,8 +20,13 @@ pub struct RequestRegistry {
 }
 
 impl RequestRegistry {
-    async fn insert(&self, request_id: String, token: CancellationToken) {
-        self.requests.lock().await.insert(request_id, token);
+    async fn try_insert(&self, request_id: String, token: CancellationToken) -> bool {
+        let mut requests = self.requests.lock().await;
+        if !requests.is_empty() {
+            return false;
+        }
+        requests.insert(request_id, token);
+        true
     }
 
     pub async fn cancel(&self, request_id: &str) -> bool {
@@ -31,6 +36,10 @@ impl RequestRegistry {
         } else {
             false
         }
+    }
+
+    pub async fn has_active(&self) -> bool {
+        !self.requests.lock().await.is_empty()
     }
 
     async fn remove(&self, request_id: &str) {
@@ -53,7 +62,11 @@ pub async fn run_chat(
         .await
         .map_err(|_| "Model profile not found".to_owned())?;
     let request_id = Uuid::now_v7().to_string();
-    let turn = database
+    let token = CancellationToken::new();
+    if !registry.try_insert(request_id.clone(), token.clone()).await {
+        return Err("Another response is already generating".to_owned());
+    }
+    let turn = match database
         .create_streaming_turn(
             &input.card_id,
             content,
@@ -61,7 +74,13 @@ pub async fn run_chat(
             &request_id,
         )
         .await
-        .map_err(|_| "Unable to create the message".to_owned())?;
+    {
+        Ok(turn) => turn,
+        Err(_) => {
+            registry.remove(&request_id).await;
+            return Err("Unable to create the message".to_owned());
+        }
+    };
     if database
         .attach_quotes(&input.quote_ids, &turn.id)
         .await
@@ -75,6 +94,7 @@ pub async fn run_chat(
                 Some("Unable to attach selected quotes"),
             )
             .await;
+        registry.remove(&request_id).await;
         return Err("Unable to attach selected quotes".to_owned());
     }
     send_event(
@@ -85,8 +105,6 @@ pub async fn run_chat(
         },
     );
 
-    let token = CancellationToken::new();
-    registry.insert(request_id.clone(), token.clone()).await;
     let result = stream_response(database, &profile, &turn, &request_id, &token, &on_event).await;
     registry.remove(&request_id).await;
     if let Err(message) = &result {
@@ -148,7 +166,7 @@ async fn stream_response(
         .set_context_snapshot(&turn.card_id, &built_context.snapshot_hash)
         .await
         .map_err(|_| "Unable to save context snapshot".to_owned())?;
-    let response = request_model(profile, &built_context.messages).await;
+    let response = request_model(profile, &built_context.messages, request_id).await;
     let response = match response {
         Ok(value) => value,
         Err(message) => {
@@ -214,6 +232,7 @@ async fn stream_response(
 async fn request_model(
     profile: &ModelProfile,
     messages: &[crate::context::ChatMessage],
+    request_id: &str,
 ) -> Result<Response, String> {
     let endpoint = if profile.provider == "ollama" {
         format!("{}/api/chat", profile.base_url)
@@ -224,11 +243,9 @@ async fn request_model(
         .timeout(std::time::Duration::from_secs(180))
         .build()
         .map_err(|_| "Unable to initialize model client".to_owned())?;
-    let mut request = client.post(endpoint).json(&json!({
-        "model": profile.model,
-        "messages": messages,
-        "stream": true
-    }));
+    let body = build_chat_body(&profile.provider, &profile.model, messages);
+    crate::model_request_debug::trace(request_id, "chat", &profile.provider, &endpoint, &body);
+    let mut request = client.post(endpoint).json(&body);
     if let Some(reference) = &profile.keychain_ref {
         request = request.bearer_auth(models_service::load_secret(reference)?);
     }
@@ -243,6 +260,18 @@ async fn request_model(
         ));
     }
     Ok(response)
+}
+
+fn build_chat_body(
+    _provider: &str,
+    model: &str,
+    messages: &[crate::context::ChatMessage],
+) -> Value {
+    json!({
+        "model": model,
+        "messages": messages,
+        "stream": true
+    })
 }
 
 async fn fail_turn(
@@ -304,7 +333,8 @@ pub fn extract_delta(provider: &str, line: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_delta, take_complete_lines, RequestRegistry};
+    use super::{build_chat_body, extract_delta, take_complete_lines, RequestRegistry};
+    use crate::context::ChatMessage;
 
     #[test]
     fn parses_ollama_and_openai_stream_lines() {
@@ -330,17 +360,47 @@ mod tests {
         assert_eq!(buffer, "sec");
     }
 
+    #[test]
+    fn builds_the_same_streaming_body_for_both_chat_providers() {
+        let messages = vec![ChatMessage {
+            role: "user".to_owned(),
+            content: "hello".to_owned(),
+        }];
+        let expected = serde_json::json!({
+            "model": "qwen",
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": true
+        });
+        assert_eq!(build_chat_body("ollama", "qwen", &messages), expected);
+        assert_eq!(
+            build_chat_body("openai_compatible", "qwen", &messages),
+            expected
+        );
+    }
+
     #[tokio::test]
     async fn cancellation_registry_tracks_requests() {
         let registry = RequestRegistry::default();
-        registry
-            .insert(
-                "request".to_owned(),
-                tokio_util::sync::CancellationToken::new(),
-            )
-            .await;
+        assert!(
+            registry
+                .try_insert(
+                    "request".to_owned(),
+                    tokio_util::sync::CancellationToken::new(),
+                )
+                .await
+        );
+        assert!(
+            !registry
+                .try_insert(
+                    "second".to_owned(),
+                    tokio_util::sync::CancellationToken::new(),
+                )
+                .await
+        );
         assert!(registry.cancel("request").await);
+        assert!(registry.has_active().await);
         registry.remove("request").await;
+        assert!(!registry.has_active().await);
         assert!(!registry.cancel("request").await);
     }
 }

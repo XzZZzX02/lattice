@@ -5,6 +5,7 @@ pub mod context;
 pub mod db;
 pub mod documents;
 pub mod mindscape;
+pub mod model_request_debug;
 pub mod models;
 pub mod models_service;
 pub mod retrieval;
@@ -42,6 +43,7 @@ pub fn run() {
             commands::create_quote,
             commands::edit_turn,
             commands::delete_turn,
+            commands::delete_card,
             commands::regenerate_turn,
             commands::search,
             commands::toggle_turn_favorite,

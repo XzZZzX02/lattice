@@ -86,6 +86,10 @@ export interface SendMessageInput {
   quoteIds: string[];
 }
 
+export interface SendMessageOptions {
+  quoteIds: string[];
+}
+
 export type StreamEvent =
   | { type: "started"; requestId: string; turn: Turn }
   | { type: "delta"; requestId: string; turnId: string; delta: string }
@@ -232,6 +236,11 @@ export interface MindscapeGraph {
   nodes: MindNode[];
   edges: MindEdge[];
   sources: MindNodeSource[];
+}
+
+export interface CardDeletionResult {
+  workspace: ProjectWorkspace;
+  mindscape: MindscapeGraph;
 }
 
 export interface CreateMindNodeInput {

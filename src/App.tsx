@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   BrainCircuit, Download, FileText, FolderPlus, GitBranch, Library, Network,
   Plus, Search, Settings2, Square, Star, Trash2, Upload, Workflow, X
@@ -15,15 +15,16 @@ import {
   LinkedCardPreview,
   LinkedMarkdown
 } from "./components/SelectionLinkedCard";
+import { summarizeCardSubtree } from "./lib/cardTree";
 import type { SelectionAnchor } from "./lib/floating";
 import { selectionFromContainer } from "./lib/selection";
 
 export function App() {
   const {
     projects, workspace, loading, error, modelProfiles, activeModelProfileId,
-    activeRequestId, activeCardId, pendingQuotes, loadProjects, createProject,
+    activeRequestId, activeRequestCardId, activeCardId, pendingQuotes, loadProjects, createProject,
     selectProject, loadModels, setActiveModel, sendMessage, cancelMessage,
-    createCard, createCardFromSelection, selectCard, renameCard, addQuote, removeQuote, editTurn,
+    createCard, createCardFromSelection, deleteCard, selectCard, renameCard, addQuote, removeQuote, editTurn,
     deleteTurn, regenerateTurn, search, searchResults, favoriteTurnIds,
     toggleFavorite, exportProject, importProject, documents, importDocument,
     deleteDocument, documentCitations, mindscape, addMindNode, addMindEdge,
@@ -52,6 +53,15 @@ export function App() {
     linkId: string;
     anchor: SelectionAnchor;
   } | null>(null);
+  const [pendingCardDeletion, setPendingCardDeletion] = useState<{
+    projectId: string;
+    cardId: string;
+    title: string;
+    cardIds: string[];
+    cardCount: number;
+    descendantCount: number;
+    turnCount: number;
+  } | null>(null);
 
   useEffect(() => {
     void loadProjects();
@@ -77,13 +87,19 @@ export function App() {
   const linkedTurns = workspace?.turns.filter(
     (turn) => turn.cardId === linkedCard?.id
   ) ?? [];
+  const visibleCardDeletion =
+    pendingCardDeletion?.projectId === workspace?.project.id
+      ? pendingCardDeletion
+      : null;
 
   async function submitMessage(event: React.FormEvent) {
     event.preventDefault();
-    if (!activeCard || !message.trim() || activeRequestId) return;
+    if (!activeCard || !message.trim() || activeRequestCardId) return;
     const content = message;
     setMessage("");
-    await sendMessage(activeCard.id, content);
+    await sendMessage(activeCard.id, content, {
+      quoteIds: pendingQuotes.map((quote) => quote.id)
+    });
   }
 
   function addCard(
@@ -121,6 +137,42 @@ export function App() {
   function clearSelection() {
     setSelection(null);
     window.getSelection()?.removeAllRanges();
+  }
+
+  const requestCardDeletion = useCallback((cardId: string) => {
+    if (!workspace || activeRequestCardId) return;
+    const card = workspace.cards.find((current) => current.id === cardId);
+    const summary = summarizeCardSubtree(
+      workspace.cards,
+      workspace.turns,
+      cardId
+    );
+    if (!card || card.relation === "root" || !summary) return;
+    setPendingCardDeletion({
+      projectId: workspace.project.id,
+      cardId,
+      title: card.title,
+      ...summary
+    });
+  }, [activeRequestCardId, workspace]);
+
+  async function deleteConfirmedCard() {
+    const pending = pendingCardDeletion;
+    if (
+      !pending
+      || activeRequestCardId
+      || pending.projectId !== workspace?.project.id
+    ) {
+      return;
+    }
+    await deleteCard(pending.cardId);
+    if (
+      linkedCard
+      && pending.cardIds.includes(linkedCard.id)
+    ) {
+      setLinkedPreview(null);
+    }
+    setPendingCardDeletion(null);
   }
 
   function addToMindscape(
@@ -253,6 +305,18 @@ export function App() {
                       const title = window.prompt("Card title", activeCard.title);
                       if (title?.trim()) void renameCard(activeCard.id, title);
                     }}>Rename</button>
+                    {activeCard?.relation !== "root" && (
+                      <button
+                        aria-label={`Delete card ${activeCard?.title ?? ""}`}
+                        className="delete-card-button"
+                        disabled={activeRequestCardId !== null}
+                        onClick={() => {
+                          if (activeCard) requestCardDeletion(activeCard.id);
+                        }}
+                      >
+                        <Trash2 size={12} /> Delete
+                      </button>
+                    )}
                   </div>
                 </div>
                 {activeCard?.contextStale && <p className="stale-warning">Context changed upstream. Generate again to refresh this branch.</p>}
@@ -325,7 +389,11 @@ export function App() {
                       {["failed", "cancelled", "interrupted"].includes(turn.status) && (
                         <button
                           className="retry-button"
-                          onClick={() => activeCard && void sendMessage(activeCard.id, turn.userContent)}
+                          onClick={() => activeCard && void sendMessage(
+                            activeCard.id,
+                            turn.userContent,
+                            { quoteIds: [] }
+                          )}
                         >
                           Retry
                         </button>
@@ -390,6 +458,8 @@ export function App() {
                   <CardNavigator
                     cards={workspace.cards}
                     activeCardId={activeCardId}
+                    deletionDisabled={activeRequestCardId !== null}
+                    onDelete={requestCardDeletion}
                     onSelect={selectCard}
                   />
                 ) : (
@@ -449,7 +519,7 @@ export function App() {
               {activeRequestId ? (
                 <button type="button" aria-label="Stop" onClick={() => void cancelMessage()}><Square size={13} /></button>
               ) : (
-                <button type="submit" aria-label="Send" disabled={!message.trim() || !activeModelProfileId}>↑</button>
+                <button type="submit" aria-label="Send" disabled={!message.trim() || !activeModelProfileId || activeRequestCardId !== null}>↑</button>
               )}
             </form>
           </>
@@ -467,10 +537,54 @@ export function App() {
         setSettingsOpen(open);
         if (!open) void loadModels();
       }} />
+      {visibleCardDeletion && (
+        <div className="card-delete-overlay">
+          <section
+            aria-label={`Delete ${visibleCardDeletion.title}`}
+            aria-modal="true"
+            className="card-delete-dialog"
+            role="dialog"
+          >
+            <p className="eyebrow">Permanent deletion</p>
+            <h2>Delete “{visibleCardDeletion.title}”?</h2>
+            <p>
+              This permanently removes {visibleCardDeletion.cardCount}{" "}
+              card{visibleCardDeletion.cardCount === 1 ? "" : "s"},{" "}
+              {visibleCardDeletion.descendantCount} descendant
+              {visibleCardDeletion.descendantCount === 1 ? "" : "s"}, and{" "}
+              {visibleCardDeletion.turnCount} message
+              {visibleCardDeletion.turnCount === 1 ? "" : "s"}.
+            </p>
+            <p>This cannot be undone.</p>
+            <div>
+              <button
+                aria-label="Cancel card deletion"
+                autoFocus
+                onClick={() => setPendingCardDeletion(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="danger"
+                disabled={activeRequestCardId !== null}
+                onClick={() => void deleteConfirmedCard()}
+              >
+                Delete permanently
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       {linkedPreview && linkedCard && (
         <LinkedCardPreview
+          activeRequestCardId={activeRequestCardId}
           anchor={linkedPreview.anchor}
           card={linkedCard}
+          deletionDisabled={activeRequestCardId !== null}
+          key={linkedCard.id}
+          modelConfigured={activeModelProfileId !== null}
+          onCancel={() => void cancelMessage()}
+          onDelete={requestCardDeletion}
           turns={linkedTurns}
           onDismiss={() => setLinkedPreview(null)}
           onOpenCard={(cardId) => {
@@ -478,6 +592,9 @@ export function App() {
             setLinkedPreview(null);
             setNavigatorMode("cards");
           }}
+          onSendMessage={(cardId, content) =>
+            sendMessage(cardId, content, { quoteIds: [] })
+          }
         />
       )}
       {activeCitation && (

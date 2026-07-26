@@ -7,3 +7,4 @@
 - [x] Phase E — Documents
 - [x] Phase F — Mindscape
 - [x] Phase G — Selection-linked cards
+- [x] Phase H — Floating-card workflow, subtree deletion, and request diagnostics

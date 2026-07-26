@@ -23,3 +23,54 @@ pnpm tauri dev
 ```
 
 Project content is stored locally. Model credentials are never written to the project database.
+
+## macOS input-service diagnostics
+
+On macOS, the development terminal can occasionally print isolated messages such as:
+
+```text
+error messaging the mach port for IMKCFRunLoopWakeUpReliable
+TSM AdjustCapsLockLEDForKeyTransitionHandling - _ISSetPhysicalKeyboardCapsLockLED Inhibit
+```
+
+These messages come from macOS input services rather than Lattice's Rust or web
+application code. They were observed on macOS 26.5.2 arm64 with Tao 0.35.3 while
+the application, Chinese input, Caps Lock, keyboard shortcuts, and floating-card
+input continued to work normally. In that situation they are diagnostic noise
+and do not make a smoke test fail.
+
+Do not globally filter or redirect stderr to hide them: doing so could also hide
+real Rust, Tauri, database, or model-provider failures. Escalate the messages as
+a platform defect only when they coincide with one of the following:
+
+- the Lattice process exits or macOS reports a crash;
+- a complete exception or native termination stack is present;
+- Chinese input stops working;
+- Caps Lock has a reproducible behavioral problem.
+
+Tauri's macOS window stack uses Tao/Wry and WKWebView. Known keyboard crashes are
+accompanied by an explicit termination stack, unlike the two isolated lines
+above. See the [Tauri architecture](https://github.com/tauri-apps/tauri) and a
+[related keyboard crash fix in winit](https://github.com/rust-windowing/winit/pull/4024).
+
+To collect a complete diagnostic log, run this from the repository root, reproduce
+the issue, and stop the app with `Ctrl+C`:
+
+```bash
+mkdir -p diagnostics
+{
+  date
+  sw_vers
+  uname -m
+  node --version
+  pnpm --version
+  rustc --version
+  cargo tree --manifest-path src-tauri/Cargo.toml -i tao
+  RUST_BACKTRACE=full pnpm tauri dev
+} 2>&1 | tee "diagnostics/lattice-macos-$(date +%Y%m%d-%H%M%S).log"
+```
+
+Debug builds intentionally print complete model request bodies. Review and redact
+the captured file before sharing it because prompts and retrieved document text
+may be sensitive; API keys and authorization headers are never included by the
+request tracer. Diagnostic logs under `diagnostics/` are ignored by Git.
