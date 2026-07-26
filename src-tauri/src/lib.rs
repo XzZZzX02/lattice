@@ -5,6 +5,7 @@ pub mod context;
 pub mod db;
 pub mod documents;
 pub mod mindscape;
+pub mod model_request_debug;
 pub mod models;
 pub mod models_service;
 pub mod retrieval;

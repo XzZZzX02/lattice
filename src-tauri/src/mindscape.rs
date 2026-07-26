@@ -338,20 +338,15 @@ async fn request_json(profile: &ModelProfile, prompt: &str) -> Result<String, St
     } else {
         format!("{}/chat/completions", profile.base_url)
     };
-    let body = if profile.provider == "ollama" {
-        json!({
-            "model": profile.model,
-            "messages": [{"role": "user", "content": prompt}],
-            "stream": false,
-            "format": "json"
-        })
-    } else {
-        json!({
-            "model": profile.model,
-            "messages": [{"role": "user", "content": prompt}],
-            "stream": false
-        })
-    };
+    let body = build_mindscape_body(&profile.provider, &profile.model, prompt);
+    let request_id = Uuid::now_v7().to_string();
+    crate::model_request_debug::trace(
+        &request_id,
+        "mindscapeSuggestion",
+        &profile.provider,
+        &endpoint,
+        &body,
+    );
     let client = Client::builder()
         .timeout(std::time::Duration::from_secs(120))
         .build()
@@ -380,6 +375,23 @@ async fn request_json(profile: &ModelProfile, prompt: &str) -> Result<String, St
         .and_then(Value::as_str)
         .map(str::to_owned)
         .ok_or_else(|| "Suggestion model response has no content".to_owned())
+}
+
+fn build_mindscape_body(provider: &str, model: &str, prompt: &str) -> Value {
+    if provider == "ollama" {
+        json!({
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": false,
+            "format": "json"
+        })
+    } else {
+        json!({
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": false
+        })
+    }
 }
 
 fn parse_raw(content: &str) -> Result<RawSuggestions, String> {
@@ -494,7 +506,7 @@ fn normalize(
 
 #[cfg(test)]
 mod tests {
-    use super::{apply, normalize, parse_raw};
+    use super::{apply, build_mindscape_body, normalize, parse_raw};
     use crate::{
         db::Database,
         models::{ApplyMindSuggestionsInput, ConceptSuggestion, MindSuggestionSet, MindscapeGraph},
@@ -520,6 +532,30 @@ mod tests {
         .expect("normalize");
         assert_eq!(set.concepts.len(), 1);
         assert!(set.relations.is_empty());
+    }
+
+    #[test]
+    fn builds_provider_specific_mindscape_request_bodies() {
+        let ollama = build_mindscape_body("ollama", "qwen", "prompt");
+        let openai = build_mindscape_body("openai_compatible", "qwen", "prompt");
+
+        assert_eq!(
+            ollama,
+            serde_json::json!({
+                "model": "qwen",
+                "messages": [{"role": "user", "content": "prompt"}],
+                "stream": false,
+                "format": "json"
+            })
+        );
+        assert_eq!(
+            openai,
+            serde_json::json!({
+                "model": "qwen",
+                "messages": [{"role": "user", "content": "prompt"}],
+                "stream": false
+            })
+        );
     }
 
     #[tokio::test]

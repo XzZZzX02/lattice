@@ -152,7 +152,7 @@ async fn stream_response(
         .set_context_snapshot(&turn.card_id, &built_context.snapshot_hash)
         .await
         .map_err(|_| "Unable to save context snapshot".to_owned())?;
-    let response = request_model(profile, &built_context.messages).await;
+    let response = request_model(profile, &built_context.messages, request_id).await;
     let response = match response {
         Ok(value) => value,
         Err(message) => {
@@ -218,6 +218,7 @@ async fn stream_response(
 async fn request_model(
     profile: &ModelProfile,
     messages: &[crate::context::ChatMessage],
+    request_id: &str,
 ) -> Result<Response, String> {
     let endpoint = if profile.provider == "ollama" {
         format!("{}/api/chat", profile.base_url)
@@ -228,11 +229,9 @@ async fn request_model(
         .timeout(std::time::Duration::from_secs(180))
         .build()
         .map_err(|_| "Unable to initialize model client".to_owned())?;
-    let mut request = client.post(endpoint).json(&json!({
-        "model": profile.model,
-        "messages": messages,
-        "stream": true
-    }));
+    let body = build_chat_body(&profile.provider, &profile.model, messages);
+    crate::model_request_debug::trace(request_id, "chat", &profile.provider, &endpoint, &body);
+    let mut request = client.post(endpoint).json(&body);
     if let Some(reference) = &profile.keychain_ref {
         request = request.bearer_auth(models_service::load_secret(reference)?);
     }
@@ -247,6 +246,18 @@ async fn request_model(
         ));
     }
     Ok(response)
+}
+
+fn build_chat_body(
+    _provider: &str,
+    model: &str,
+    messages: &[crate::context::ChatMessage],
+) -> Value {
+    json!({
+        "model": model,
+        "messages": messages,
+        "stream": true
+    })
 }
 
 async fn fail_turn(
@@ -308,7 +319,8 @@ pub fn extract_delta(provider: &str, line: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_delta, take_complete_lines, RequestRegistry};
+    use super::{build_chat_body, extract_delta, take_complete_lines, RequestRegistry};
+    use crate::context::ChatMessage;
 
     #[test]
     fn parses_ollama_and_openai_stream_lines() {
@@ -332,6 +344,24 @@ mod tests {
         let mut buffer = "first\nsec".to_owned();
         assert_eq!(take_complete_lines(&mut buffer), vec!["first"]);
         assert_eq!(buffer, "sec");
+    }
+
+    #[test]
+    fn builds_the_same_streaming_body_for_both_chat_providers() {
+        let messages = vec![ChatMessage {
+            role: "user".to_owned(),
+            content: "hello".to_owned(),
+        }];
+        let expected = serde_json::json!({
+            "model": "qwen",
+            "messages": [{"role": "user", "content": "hello"}],
+            "stream": true
+        });
+        assert_eq!(build_chat_body("ollama", "qwen", &messages), expected);
+        assert_eq!(
+            build_chat_body("openai_compatible", "qwen", &messages),
+            expected
+        );
     }
 
     #[tokio::test]
