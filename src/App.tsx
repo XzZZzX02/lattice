@@ -1,16 +1,21 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  BrainCircuit, Download, FileText, FolderPlus, GitBranch, Library, Network,
-  Plus, Search, Settings2, Square, Star, Trash2, Upload, Workflow, X
+  BrainCircuit, FileText, GitBranch, Network, Plus, Star, Workflow, X
 } from "lucide-react";
 import { useWorkspaceStore } from "./store/workspace";
 import { ModelSettings } from "./components/ModelSettings";
 import { CardNavigator } from "./components/CardNavigator";
 import { MindscapePanel } from "./components/MindscapePanel";
+import { AppSidebar } from "./components/AppSidebar";
+import { CardActionsMenu } from "./components/CardActionsMenu";
 import {
-  QuoteChips,
-  SelectionToolbar
-} from "./components/SelectionActions";
+  ConfirmDialog,
+  TextInputDialog
+} from "./components/ActionDialog";
+import { LatticeLogo } from "./components/LatticeLogo";
+import { MessageComposer } from "./components/MessageComposer";
+import { WorkspaceHeader } from "./components/WorkspaceHeader";
+import { SelectionToolbar } from "./components/SelectionActions";
 import {
   LinkedCardPreview,
   LinkedMarkdown
@@ -45,6 +50,8 @@ export function App() {
     anchor: SelectionAnchor;
   } | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const cardActionsRef = useRef<HTMLButtonElement>(null);
   const [activeCitation, setActiveCitation] = useState(
     null as (typeof documentCitations)[number] | null
   );
@@ -62,11 +69,48 @@ export function App() {
     descendantCount: number;
     turnCount: number;
   } | null>(null);
+  const [renameCardOpen, setRenameCardOpen] = useState(false);
+  const [pendingDocumentDeletion, setPendingDocumentDeletion] = useState<
+    (typeof documents)[number] | null
+  >(null);
+  const [pendingTurnDeletion, setPendingTurnDeletion] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
+  const [pendingTurnEdit, setPendingTurnEdit] = useState<{
+    id: string;
+    content: string;
+  } | null>(null);
+  const [pendingMindNode, setPendingMindNode] = useState<{
+    sourceCardId: string;
+    sourceTurnId: string | undefined;
+    suggestedLabel: string;
+    description: string;
+  } | null>(null);
+  const [pendingMindEdge, setPendingMindEdge] = useState<{
+    sourceId: string;
+    targetId: string;
+  } | null>(null);
 
   useEffect(() => {
     void loadProjects();
     void loadModels();
   }, [loadModels, loadProjects]);
+
+  useEffect(() => {
+    function handleGlobalShortcut(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
+      if (event.metaKey && event.key === ",") {
+        event.preventDefault();
+        setSettingsOpen(true);
+      }
+    }
+    window.addEventListener("keydown", handleGlobalShortcut);
+    return () => window.removeEventListener("keydown", handleGlobalShortcut);
+  }, []);
 
   async function submitProject(event: React.FormEvent) {
     event.preventDefault();
@@ -182,116 +226,63 @@ export function App() {
     description: string
   ) {
     if (!workspace) return;
-    const label = window.prompt("Concept label", suggestedLabel.slice(0, 160));
-    if (!label?.trim()) return;
-    void addMindNode({
-      projectId: workspace.project.id,
-      label: label.trim(),
-      description,
+    setPendingMindNode({
       sourceCardId,
-      sourceTurnId
+      sourceTurnId,
+      suggestedLabel: suggestedLabel.slice(0, 160),
+      description
     });
-    setNavigatorMode("mindscape");
   }
 
   return (
     <main className="app-shell">
-      <aside className="sidebar">
-        <header className="brand">
-          <span className="brand-mark"><BrainCircuit size={20} /></span>
-          <span>Lattice</span>
-        </header>
-        <nav className="quick-actions" aria-label="Workspace actions">
-          <button onClick={() => setIsCreating(true)}><Plus size={17} /> New project</button>
-          <button><FolderPlus size={17} /> New folder</button>
-          <button disabled={!workspace} onClick={() => void importDocument()}><Library size={17} /> Import document</button>
-          <button onClick={() => void importProject()}><Upload size={17} /> Import project</button>
-        </nav>
-        <form className="search-form" onSubmit={(event) => {
+      <AppSidebar
+        activeProjectId={workspace?.project.id ?? null}
+        documents={documents}
+        isCreating={isCreating}
+        loading={loading}
+        projects={projects}
+        searchInputRef={searchInputRef}
+        searchQuery={searchQuery}
+        searchResults={searchResults}
+        title={title}
+        onCancelCreate={() => setIsCreating(false)}
+        onCreateProject={submitProject}
+        onDeleteDocument={setPendingDocumentDeletion}
+        onImportDocument={() => void importDocument()}
+        onImportProject={() => void importProject()}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onSearch={(event) => {
           event.preventDefault();
           void search(searchQuery);
-        }}>
-          <Search size={14} />
-          <input aria-label="Search workspace" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search local content" />
-        </form>
-        {searchResults.length > 0 && (
-          <div className="search-results">
-            {searchResults.map((result) => (
-              <button key={`${result.entityType}-${result.entityId}`} onClick={() => result.cardId && selectCard(result.cardId)}>
-                <strong>{result.title}</strong>
-                <span>{result.excerpt}</span>
-              </button>
-            ))}
-          </div>
-        )}
-        {isCreating && (
-          <form className="new-project-form" onSubmit={submitProject}>
-            <input
-              autoFocus
-              aria-label="Project title"
-              maxLength={200}
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder="Project title"
-              value={title}
-            />
-            <div><button type="submit">Create</button><button type="button" onClick={() => setIsCreating(false)}>Cancel</button></div>
-          </form>
-        )}
-        <section className="project-section">
-          <p className="eyebrow">Local projects</p>
-          {projects.map((project) => (
-            <button
-              aria-label={`Open project ${project.title}`}
-              className={workspace?.project.id === project.id ? "project active" : "project"}
-              key={project.id}
-              onClick={() => void selectProject(project.id)}
-            >
-              <span className="project-dot" />
-              {project.title}
-            </button>
-          ))}
-          {!loading && projects.length === 0 && <p className="empty-copy">Create a project to begin exploring.</p>}
-        </section>
-        {workspace && (
-          <section className="document-section">
-            <p className="eyebrow">Documents</p>
-            {documents.map((document) => (
-              <div className="document-row" key={document.id}>
-                <span title={document.name}>{document.name}</span>
-                <button
-                  aria-label={`Delete document ${document.name}`}
-                  onClick={() => {
-                    if (window.confirm(`Delete “${document.name}” from this project?`)) {
-                      void deleteDocument(document.id);
-                    }
-                  }}
-                ><Trash2 size={12} /></button>
-              </div>
-            ))}
-            {documents.length === 0 && <p className="empty-copy">No local documents.</p>}
-          </section>
-        )}
-        <button className="settings" onClick={() => setSettingsOpen(true)}><Settings2 size={17} /> Settings</button>
-      </aside>
+        }}
+        onSearchQueryChange={setSearchQuery}
+        onSelectCard={selectCard}
+        onSelectProject={(projectId) => void selectProject(projectId)}
+        onStartCreate={() => setIsCreating(true)}
+        onTitleChange={setTitle}
+      />
       <section className="workspace">
         {error && <div className="error-banner" role="alert">{error}</div>}
         {workspace ? (
           <>
-            <header className="workspace-header">
-              <div><p className="eyebrow">Current exploration</p><h1>{workspace.project.title}</h1></div>
-              <div className="workspace-tools">
-                <button onClick={() => void exportProject("json")} title="Export a restorable backup"><Download size={13} /> JSON</button>
-                <button onClick={() => void exportProject("markdown")} title="Export a readable copy"><Download size={13} /> Markdown</button>
-                <span className="local-pill">Local only</span>
-              </div>
-            </header>
+            <WorkspaceHeader
+              title={workspace.project.title}
+              onExport={(format) => void exportProject(format)}
+            />
             <div className="workspace-grid">
               <article className="conversation-card">
-                <div className="card-kicker">{activeCard?.relation.toUpperCase()} CARD</div>
+                <div className="card-kicker">
+                  <span />
+                  {activeCard?.relation ?? "root"} card
+                </div>
                 <div className="card-title-row">
-                  <h2>{activeCard?.title}</h2>
-                  <div>
-                    <button onClick={() => {
+                  <h2 title={activeCard?.title}>{activeCard?.title}</h2>
+                  <CardActionsMenu
+                    canDelete={activeCard?.relation !== "root"}
+                    deletionDisabled={activeRequestCardId !== null}
+                    triggerRef={cardActionsRef}
+                    onAddToMap={() => {
                       if (!activeCard) return;
                       addToMindscape(
                         activeCard.id,
@@ -299,25 +290,12 @@ export function App() {
                         activeCard.title,
                         activeCard.summary
                       );
-                    }}>Add to map</button>
-                    <button onClick={() => {
-                      if (!activeCard) return;
-                      const title = window.prompt("Card title", activeCard.title);
-                      if (title?.trim()) void renameCard(activeCard.id, title);
-                    }}>Rename</button>
-                    {activeCard?.relation !== "root" && (
-                      <button
-                        aria-label={`Delete card ${activeCard?.title ?? ""}`}
-                        className="delete-card-button"
-                        disabled={activeRequestCardId !== null}
-                        onClick={() => {
-                          if (activeCard) requestCardDeletion(activeCard.id);
-                        }}
-                      >
-                        <Trash2 size={12} /> Delete
-                      </button>
-                    )}
-                  </div>
+                    }}
+                    onDelete={() => {
+                      if (activeCard) requestCardDeletion(activeCard.id);
+                    }}
+                    onRename={() => setRenameCardOpen(true)}
+                  />
                 </div>
                 {activeCard?.contextStale && <p className="stale-warning">Context changed upstream. Generate again to refresh this branch.</p>}
                 {turns.length === 0 && <div className="empty-card">
@@ -328,10 +306,10 @@ export function App() {
                   <div className="turn" key={turn.id}>
                     <div className="message user">{turn.userContent}</div>
                     <div className="turn-menu">
-                      <button onClick={() => {
-                        const content = window.prompt("Edit message", turn.userContent);
-                        if (content?.trim()) void editTurn(turn.id, content);
-                      }}>Edit</button>
+                      <button onClick={() => setPendingTurnEdit({
+                        id: turn.id,
+                        content: turn.userContent
+                      })}>Edit</button>
                       <button onClick={() => void regenerateTurn(turn.id)}>Regenerate</button>
                       <button onClick={() => addToMindscape(
                         turn.cardId,
@@ -344,11 +322,10 @@ export function App() {
                         className={favoriteTurnIds.includes(turn.id) ? "favorited" : ""}
                         onClick={() => void toggleFavorite(turn.id, turn.cardId)}
                       ><Star size={11} fill="currentColor" /></button>
-                      <button onClick={() => {
-                        if (window.confirm("Delete this dialogue? Its previous value remains in the local revision log.")) {
-                          void deleteTurn(turn.id);
-                        }
-                      }}>Delete</button>
+                      <button onClick={() => setPendingTurnDeletion({
+                        id: turn.id,
+                        title: turn.userContent.slice(0, 80)
+                      })}>Delete</button>
                     </div>
                     <div
                       className={`message assistant ${turn.status}`}
@@ -475,15 +452,7 @@ export function App() {
                       setNavigatorMode("cards");
                     }}
                     onConnect={(sourceId, targetId) => {
-                      const relation = window.prompt("Relationship", "relates to");
-                      if (relation?.trim()) {
-                        void addMindEdge({
-                          projectId: workspace.project.id,
-                          sourceId,
-                          targetId,
-                          relation: relation.trim()
-                        });
-                      }
+                      setPendingMindEdge({ sourceId, targetId });
                     }}
                     onMove={(...args) => void updateMindNode(...args)}
                     suggestions={mindSuggestions}
@@ -495,38 +464,26 @@ export function App() {
                 )}
               </div>
             </div>
-            <form className="composer" onSubmit={submitMessage}>
-              <select aria-label="Model" value={activeModelProfileId ?? ""} onChange={(e) => setActiveModel(e.target.value)}>
-                <option value="">Configure a model</option>
-                {modelProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
-              </select>
-              <div className="composer-content">
-                <QuoteChips quotes={pendingQuotes} onRemove={removeQuote} />
-                <textarea
-                  aria-label="Message"
-                  placeholder="Explore anything…  ⌘↵ to send"
-                  rows={1}
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                      e.preventDefault();
-                      e.currentTarget.form?.requestSubmit();
-                    }
-                  }}
-                />
-              </div>
-              {activeRequestId ? (
-                <button type="button" aria-label="Stop" onClick={() => void cancelMessage()}><Square size={13} /></button>
-              ) : (
-                <button type="submit" aria-label="Send" disabled={!message.trim() || !activeModelProfileId || activeRequestCardId !== null}>↑</button>
-              )}
-            </form>
+            <div className="composer-row">
+              <MessageComposer
+                activeModelProfileId={activeModelProfileId}
+                activeRequestId={activeRequestId}
+                activeRequestCardId={activeRequestCardId}
+                message={message}
+                modelProfiles={modelProfiles}
+                quotes={pendingQuotes}
+                onCancel={() => void cancelMessage()}
+                onMessageChange={setMessage}
+                onModelChange={setActiveModel}
+                onRemoveQuote={removeQuote}
+                onSubmit={submitMessage}
+              />
+            </div>
           </>
         ) : (
           <section className="welcome">
-            <span className="brand-mark large"><BrainCircuit size={30} /></span>
-            <p className="eyebrow">Local-first thinking</p>
+            <LatticeLogo large />
+            <p className="section-label">Local-first thinking</p>
             <h1>Turn a conversation into a map.</h1>
             <p>Create a project, follow an idea, and keep every branch available without losing context.</p>
             <button onClick={() => setIsCreating(true)}><Plus size={18} /> Create project</button>
@@ -537,16 +494,11 @@ export function App() {
         setSettingsOpen(open);
         if (!open) void loadModels();
       }} />
-      {visibleCardDeletion && (
-        <div className="card-delete-overlay">
-          <section
-            aria-label={`Delete ${visibleCardDeletion.title}`}
-            aria-modal="true"
-            className="card-delete-dialog"
-            role="dialog"
-          >
-            <p className="eyebrow">Permanent deletion</p>
-            <h2>Delete “{visibleCardDeletion.title}”?</h2>
+      <ConfirmDialog
+        open={visibleCardDeletion !== null}
+        title={`Delete ${visibleCardDeletion?.title ?? "card"}`}
+        description={visibleCardDeletion ? (
+          <>
             <p>
               This permanently removes {visibleCardDeletion.cardCount}{" "}
               card{visibleCardDeletion.cardCount === 1 ? "" : "s"},{" "}
@@ -556,25 +508,125 @@ export function App() {
               {visibleCardDeletion.turnCount === 1 ? "" : "s"}.
             </p>
             <p>This cannot be undone.</p>
-            <div>
-              <button
-                aria-label="Cancel card deletion"
-                autoFocus
-                onClick={() => setPendingCardDeletion(null)}
-              >
-                Cancel
-              </button>
-              <button
-                className="danger"
-                disabled={activeRequestCardId !== null}
-                onClick={() => void deleteConfirmedCard()}
-              >
-                Delete permanently
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
+          </>
+        ) : null}
+        confirmLabel="Delete permanently"
+        cancelAriaLabel="Cancel card deletion"
+        danger
+        disabled={activeRequestCardId !== null}
+        onConfirm={() => void deleteConfirmedCard()}
+        onOpenChange={(open) => {
+          if (!open) setPendingCardDeletion(null);
+        }}
+      />
+      <TextInputDialog
+        open={renameCardOpen && activeCard !== undefined}
+        title="Rename card"
+        label="Card title"
+        initialValue={activeCard?.title ?? ""}
+        submitLabel="Save title"
+        returnFocus={() => cardActionsRef.current?.focus()}
+        onSubmit={(nextTitle) => {
+          if (activeCard) void renameCard(activeCard.id, nextTitle);
+        }}
+        onOpenChange={setRenameCardOpen}
+      />
+      <TextInputDialog
+        open={pendingTurnEdit !== null}
+        title="Edit message"
+        label="Message"
+        initialValue={pendingTurnEdit?.content ?? ""}
+        submitLabel="Save message"
+        onSubmit={(content) => {
+          if (pendingTurnEdit) void editTurn(pendingTurnEdit.id, content);
+          setPendingTurnEdit(null);
+        }}
+        onOpenChange={(open) => {
+          if (!open) setPendingTurnEdit(null);
+        }}
+      />
+      <TextInputDialog
+        open={pendingMindNode !== null}
+        title="Add concept to Mindscape"
+        label="Concept label"
+        initialValue={pendingMindNode?.suggestedLabel ?? ""}
+        submitLabel="Add concept"
+        onSubmit={(label) => {
+          if (!pendingMindNode || !workspace) return;
+          void addMindNode({
+            projectId: workspace.project.id,
+            label,
+            description: pendingMindNode.description,
+            sourceCardId: pendingMindNode.sourceCardId,
+            sourceTurnId: pendingMindNode.sourceTurnId
+          });
+          setNavigatorMode("mindscape");
+          setPendingMindNode(null);
+        }}
+        onOpenChange={(open) => {
+          if (!open) setPendingMindNode(null);
+        }}
+      />
+      <TextInputDialog
+        open={pendingMindEdge !== null}
+        title="Name relationship"
+        label="Relationship"
+        initialValue="relates to"
+        submitLabel="Connect concepts"
+        onSubmit={(relation) => {
+          if (!pendingMindEdge || !workspace) return;
+          void addMindEdge({
+            projectId: workspace.project.id,
+            sourceId: pendingMindEdge.sourceId,
+            targetId: pendingMindEdge.targetId,
+            relation
+          });
+          setPendingMindEdge(null);
+        }}
+        onOpenChange={(open) => {
+          if (!open) setPendingMindEdge(null);
+        }}
+      />
+      <ConfirmDialog
+        open={pendingDocumentDeletion !== null}
+        title={`Delete ${pendingDocumentDeletion?.name ?? "document"}`}
+        description={
+          <p>
+            Remove this source from the current project? Existing citation
+            snapshots remain available.
+          </p>
+        }
+        confirmLabel="Delete document"
+        danger
+        onConfirm={() => {
+          if (pendingDocumentDeletion) {
+            void deleteDocument(pendingDocumentDeletion.id);
+          }
+          setPendingDocumentDeletion(null);
+        }}
+        onOpenChange={(open) => {
+          if (!open) setPendingDocumentDeletion(null);
+        }}
+      />
+      <ConfirmDialog
+        open={pendingTurnDeletion !== null}
+        title="Delete dialogue"
+        description={
+          <p>
+            Delete “{pendingTurnDeletion?.title}”? Its previous value remains
+            in the local revision log.
+          </p>
+        }
+        confirmLabel="Delete dialogue"
+        danger
+        onConfirm={() => {
+          if (pendingTurnDeletion) void deleteTurn(pendingTurnDeletion.id);
+          setPendingTurnDeletion(null);
+        }}
+        onOpenChange={(open) => {
+          if (!open) setPendingTurnDeletion(null);
+        }}
+      />
       {linkedPreview && linkedCard && (
         <LinkedCardPreview
           activeRequestCardId={activeRequestCardId}
