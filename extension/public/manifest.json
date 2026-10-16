@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Lattice for ChatGPT",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "用回答卡片、选区摘录和原生对话分支整理 ChatGPT。",
   "minimum_chrome_version": "120",
   "permissions": ["storage"],

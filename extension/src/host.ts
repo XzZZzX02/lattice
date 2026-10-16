@@ -3,11 +3,19 @@ import { conversationKey } from "./presentation";
 import type { ChatSnapshot, Excerpt, NativeAnswer } from "./types";
 
 const ROLE = "[data-message-author-role]";
+const SEARCH_UNIT = "[data-chatgpt-search-unit-key]";
+const SELECTION_MESSAGE = "[data-chatgpt-selection-message-id]";
+const TURN = "article, [data-turn-id], [data-talvt-turn-state]";
 const ephemeralIds = new WeakMap<HTMLElement, string>();
 
 function messageIdentity(element: HTMLElement): { id: string; stableId: boolean } {
-  const messageId = element.closest("[data-message-id]")?.getAttribute("data-message-id");
+  const messageId = element.closest("[data-message-id]")?.getAttribute("data-message-id")
+    || element.getAttribute("data-chatgpt-selection-message-id");
   if (messageId) return { id: `message:${messageId}`, stableId: true };
+  // Search-unit keys can contain positional `fallback-turn-*` values. Only the
+  // actual message IDs are persistent; one unit may list the same ID twice.
+  const searchIds = [...new Set((element.closest("[data-chatgpt-search-message-ids]")?.getAttribute("data-chatgpt-search-message-ids") ?? "").split(/\s+/).filter(Boolean))];
+  if (searchIds.length === 1) return { id: `message:${searchIds[0]}`, stableId: true };
   const turn = element.closest<HTMLElement>("[data-turn-id], article[data-testid^='conversation-turn-']");
   const turnId = turn?.getAttribute("data-turn-id") || turn?.id;
   if (turnId && turn?.querySelectorAll(ROLE).length === 1) return { id: `turn:${turnId}`, stableId: true };
@@ -21,15 +29,30 @@ export function collectChat(documentRoot = document, href = location.href): Chat
   const answers: NativeAnswer[] = [];
   let question = "";
   const seen = new Set<string>();
-  for (const element of main?.querySelectorAll<HTMLElement>(ROLE) ?? []) {
+  for (const element of main?.querySelectorAll<HTMLElement>(`${ROLE}, ${SEARCH_UNIT}`) ?? []) {
     if (element.parentElement?.closest(ROLE) || element.closest("[hidden], [aria-hidden='true']")) continue;
-    const role = element.getAttribute("data-message-author-role");
-    if (role === "user") { question = (element.innerText ?? element.textContent ?? "").trim(); continue; }
+    const legacyRole = element.getAttribute("data-message-author-role");
+    if (!legacyRole && (element.parentElement?.closest(SEARCH_UNIT) || element.querySelector(ROLE))) continue;
+    const role = legacyRole || element.getAttribute("data-chatgpt-search-unit-key")?.match(/:(user|assistant)$/)?.[1];
+    if (role === "user") {
+      const content = legacyRole ? element : element.querySelector<HTMLElement>("[data-content-search-unit-key]") ?? element;
+      question = (content.innerText ?? content.textContent ?? "").trim();
+      continue;
+    }
     if (role !== "assistant") continue;
-    const identity = messageIdentity(element);
-    if (seen.has(identity.id)) continue;
-    seen.add(identity.id);
-    answers.push({ ...identity, question, text: (element.innerText ?? element.textContent ?? "").trim(), element, contentElement: element });
+    const selectionMessages = legacyRole ? [] : [...element.querySelectorAll<HTMLElement>(SELECTION_MESSAGE)].filter((message) => !message.parentElement?.closest(SELECTION_MESSAGE));
+    // Current ChatGPT puts its screen-reader heading outside the message body.
+    // Keep that heading out of excerpts, and retain each real message's identity.
+    const messages = selectionMessages.length ? selectionMessages : [element];
+    for (const message of messages) {
+      if (message.closest("[hidden], [aria-hidden='true']")) continue;
+      const identity = messageIdentity(message);
+      if (seen.has(identity.id)) continue;
+      seen.add(identity.id);
+      const heading = !legacyRole && message === element ? element.querySelector<HTMLElement>("[data-conversation-role='assistant']") : null;
+      const contentElement = heading?.nextElementSibling instanceof HTMLElement ? heading.nextElementSibling : message;
+      answers.push({ ...identity, question, text: (contentElement.innerText ?? contentElement.textContent ?? "").trim(), element: message, contentElement });
+    }
   }
   const url = new URL(href);
   const key = conversationKey(href);
@@ -57,7 +80,7 @@ export function observeChat(onChange: (snapshot: ChatSnapshot) => void, getHref 
     // Throttle rather than debounce: keep navigation usable during a long stream.
     if (!timer) timer = setTimeout(update, 180);
   });
-  observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["data-message-id", "data-message-author-role", "data-turn-id", "data-testid", "hidden", "aria-hidden", "aria-modal", "open", "role"] });
+  observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["data-message-id", "data-message-author-role", "data-turn-id", "data-testid", "data-chatgpt-search-unit-key", "data-chatgpt-search-message-ids", "data-chatgpt-selection-message-id", "data-conversation-role", "hidden", "aria-hidden", "aria-modal", "open", "role"] });
   const routeTimer = setInterval(() => {
     if (location.pathname !== previousRoute) { previousRoute = location.pathname; update(); }
   }, 500);
@@ -120,7 +143,7 @@ export function excerptRange(answer: NativeAnswer, excerpt: Excerpt): Range | nu
   return null;
 }
 
-const BRANCH_LABEL = /^(branch in (a )?new chat|在新(聊天|对话)中(创建)?分支|新(聊天|对话)中的分支|分支(到|至)新(聊天|对话))$/i;
+const BRANCH_LABEL = /^(branch in (a )?new chat|创建(对话|聊天)分支|在新(聊天|对话)中(创建)?分支|新(聊天|对话)中的分支|分支(到|至)新(聊天|对话))$/i;
 const MORE_LABEL = /^(more( actions| options)?|更多(操作|选项)?)$/i;
 function accessibleName(element: HTMLElement): string {
   return (element.getAttribute("aria-label") || element.innerText || element.textContent || "").trim().replace(/\s+/g, " ");
@@ -130,7 +153,7 @@ function available(element: HTMLElement): boolean {
 }
 
 export async function findNativeBranchAction(answer: NativeAnswer, timeout = 1800): Promise<HTMLElement | null> {
-  const turn = answer.element.closest<HTMLElement>("article, [data-turn-id]");
+  const turn = answer.element.closest<HTMLElement>(TURN);
   if (!turn?.isConnected) return null;
   jumpToAnswer(answer);
   const controls = [...turn.querySelectorAll<HTMLElement>("button, [role='button']")].filter((button) => !answer.contentElement.contains(button) && available(button));
