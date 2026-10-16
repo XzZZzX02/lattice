@@ -1,0 +1,26 @@
+/* Keep the original message nodes, native event handlers, and tool surfaces. */
+::highlight(lattice-excerpt) { background-color: #71b7ff55; color: inherit; }
+::highlight(lattice-linked-excerpts) { background-color: #71b7ff25; text-decoration: underline; color: inherit; }
+html[data-lattice-cards="true"] [data-lattice-answer] {
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  border-radius: 16px;
+  padding: 22px;
+  margin-block: 18px;
+  scroll-margin-block: 100px;
+}
+[data-lattice-answer][data-lattice-active="true"] {
+  outline: 2px solid #71b7ff;
+  outline-offset: 5px;
+  scroll-margin-block: 100px;
+}
+@media (min-width: 1180px) {
+  html[data-lattice-open="true"] main {
+    margin-inline-end: 364px;
+    min-width: 0;
+  }
+}
+@media (max-width: 640px) {
+  html[data-lattice-cards="true"] [data-lattice-answer] {
+    padding: 14px;
+  }
+}

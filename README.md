@@ -24,6 +24,29 @@ pnpm tauri dev
 
 Project content is stored locally. Model credentials are never written to the project database.
 
+## ChatGPT browser extension
+
+The optional Chrome/Edge extension keeps ChatGPT's native conversation, composer,
+citations, files, tools, and conversation branches, and adds Lattice presentation
+and organization. It has no model backend or API-key configuration.
+
+```bash
+pnpm extension:build
+```
+
+Load `dist-extension/` as an unpacked extension. A ready-to-extract archive is also
+written to `artifacts/lattice-chatgpt-extension.zip`. See
+[installation, features, and compatibility limits](extension/README.md).
+
+For the local compatibility fixture (no ChatGPT account or model calls):
+
+```bash
+pnpm extension:dev
+```
+
+Open `http://127.0.0.1:1421/`. This fixture exercises the same UI and DOM adapter;
+its native menus and extension storage are simulated.
+
 ## macOS input-service diagnostics
 
 On macOS, the development terminal can occasionally print isolated messages such as:

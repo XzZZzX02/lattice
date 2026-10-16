@@ -11,6 +11,9 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "extension:build": "tsc -p extension/tsconfig.json && node extension/build.mjs",
+    "extension:dev": "vite --config extension/vite.demo.config.ts",
+    "extension:test": "vitest run extension/src",
     "tauri": "tauri"
   },
   "dependencies": {

@@ -13,3 +13,6 @@ src-tauri/gen/
 *.sqlite
 *.sqlite3
 diagnostics/
+dist-extension/
+dist-extension-demo/
+artifacts/lattice-chatgpt-extension.zip

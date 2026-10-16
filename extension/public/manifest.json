@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Lattice for ChatGPT",
+  "version": "0.1.0",
+  "description": "用回答卡片、选区摘录和原生对话分支整理 ChatGPT。",
+  "minimum_chrome_version": "120",
+  "permissions": ["storage"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [{
+    "matches": ["https://chatgpt.com/*"],
+    "js": ["content.js"],
+    "css": ["native.css"],
+    "run_at": "document_idle",
+    "world": "ISOLATED"
+  }]
+}

@@ -1,0 +1,37 @@
+* { box-sizing: border-box; }
+body { margin: 0; background: #fff; color: #252525; font: 15px/1.85 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+.native-sidebar { position: fixed; inset: 0 auto 0 0; width: 205px; padding: 23px 18px; background: #f8f8f7; display: flex; flex-direction: column; gap: 14px; font-size: 13px; }
+.native-sidebar strong { font-size: 17px; margin-bottom: 12px; }
+.native-sidebar hr { border: 0; border-top: 1px solid #e8e8e8; width: 100%; }
+.native-sidebar small { color: #909090; }
+.native-sidebar p { margin: 0; }
+.native-sidebar a { color: #8a8a8a; margin-top: auto; font-size: 11px; }
+main { margin-left: 205px; min-height: 100vh; padding: 0 30px 240px; }
+.native-header { position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center; padding: 16px 0; background: #ffffffed; z-index: 2; }
+.native-header strong { font-size: 19px; }
+.native-header span { color: #aaa; }
+.native-header small { color: #999; font-size: 11px; }
+.native-header > button { border: 1px solid #ddd; background: #fff; padding: 5px 8px; border-radius: 6px; color: #777; font-size: 11px; cursor: pointer; }
+.demo-tool-dialog { border: 1px solid #ddd; border-radius: 16px; max-width: 470px; padding: 28px; color: #252525; }
+.demo-tool-dialog::backdrop { background: #0005; }
+.demo-tool-dialog button { border: 0; border-radius: 8px; background: #222; color: white; padding: 9px 15px; cursor: pointer; }
+.native-transcript { max-width: 720px; margin: 35px auto 0; }
+article { margin-block: 24px; }
+[data-message-author-role="user"] { border-radius: 20px; background: #f3f3f3; padding: 13px 20px; margin-left: 60px; }
+h2 { font-size: 22px; line-height: 1.55; margin-top: 0; }
+h3 { font-size: 17px; }
+p { margin-block: 14px; }
+.citation { display: inline-block; border-radius: 5px; padding: 0 7px; background: #eee; font-size: 11px; color: #555; text-decoration: none; }
+.native-actions { display: flex; gap: 10px; color: #777; }
+.native-actions button, .native-code-copy { border: 0; background: transparent; color: #777; padding: 4px 6px; cursor: pointer; }
+blockquote { border-left: 3px solid #ddd; margin-inline: 0; padding-left: 16px; color: #666; }
+pre { border-radius: 9px; padding: 20px; background: #f7f7f7; overflow-x: auto; font-size: 13px; }
+.native-composer { position: fixed; bottom: 15px; left: 235px; right: 390px; max-width: 720px; margin-inline: auto; padding: 14px 18px; border: 1px solid #ddd; border-radius: 23px; background: #fff; box-shadow: 0 5px 15px #0000000a; z-index: 2; }
+.native-composer textarea { width: 100%; height: 40px; border: 0; resize: none; outline: none; font: inherit; }
+.native-composer > div { display: flex; align-items: center; justify-content: space-between; }
+.native-composer button { width: 30px; height: 30px; background: #222; border: 0; border-radius: 50%; color: white; font-size: 20px; }
+.native-composer small { color: #999; font-size: 10px; }
+[role="menu"] { position: fixed; top: 40%; left: 45%; border: 1px solid #ddd; border-radius: 10px; background: white; padding: 8px; box-shadow: 0 10px 40px #0002; z-index: 100; }
+[role="menuitem"] { display: block; padding: 10px 14px; background: transparent; border: 0; font: inherit; cursor: pointer; }
+@media(max-width: 1180px) { .native-sidebar { display: none; } main { margin-left: 0; padding-inline: 20px 380px; } .native-composer { left: 20px; right: 380px; } }
+@media(max-width: 640px) { main { padding-inline: 15px; } .native-composer { left: 15px; right: 15px; } }

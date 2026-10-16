@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>非线性思考与对话组织 - ChatGPT</title><link rel="stylesheet" href="/native-demo.css"></head>
+<body>
+  <aside class="native-sidebar"><strong>ChatGPT</strong><span>新聊天</span><span>搜索聊天</span><span>项目</span><hr><small>今天</small><p>非线性思考与对话组织</p><p>把灵感变成研究问题</p><a href="https://chatgpt.com" target="_blank" rel="noreferrer">这是本地兼容性演示</a></aside>
+  <main>
+    <header class="native-header"><strong>ChatGPT <span>⌄</span></strong><button id="demo-native-dialog">原生工具弹窗</button><small>本地测试页面 · 内容为演示数据</small></header>
+    <div class="native-transcript">
+      <article data-turn-id="user-one"><div data-message-author-role="user" data-message-id="user-one">我经常在一个回答中产生多个新问题，怎样避免有价值的想法被后续聊天淹没？</div></article>
+      <article data-turn-id="answer-one"><div data-message-author-role="assistant" data-message-id="answer-one"><h2>把线性对话，变成可以回来的思考路径</h2><p>可以将聊天内容分成三个层次：主线问题、局部探索，以及跨问题的概念联系。关键不是把每段文字搬到另一个地方，而是让它始终保留可回溯的来源。</p><p>当一个回答触发新的问题时，可以从那条回答创建一个独立分支。新分支沿用分支点之前的对话，让你继续探索，同时保留原来的思考路径。<a href="https://developers.openai.com/plugins/build/extensions" class="citation" target="_blank" rel="noreferrer">1</a></p><h3>一个具体的工作方式</h3><ol><li>主对话用于推进核心问题。</li><li>选中值得继续的句子，将其保存为带来源的摘录。</li><li>从回答分支，在新的对话中展开一个方向。</li><li>用思维图连接不同分支里的概念。</li></ol><p>卡片组织的是阅读路径；实际参与下一轮问答的上下文，仍由当前 ChatGPT 会话决定。</p></div><div class="native-actions"><button class="native-copy">复制</button><button aria-label="More actions" class="native-more">更多</button></div></article>
+      <article data-turn-id="user-two"><div data-message-author-role="user" data-message-id="user-two">那选区卡片和会话分支应该怎样配合？</div></article>
+      <article data-turn-id="answer-two"><div data-message-author-role="assistant" data-message-id="answer-two"><h2>摘录保留线索，分支承载探索</h2><p>摘录记录你在意的具体段落，可以附上自己的笔记。分支则是一段真正独立的对话，用于继续追问。</p><blockquote>例如，将“保留可回溯的来源”摘录成卡片，再从这条回答建立分支，专门讨论引用和证据管理。</blockquote><p>在这个过程中，引用来源、附件和工具操作继续使用 ChatGPT 原生界面。扩展只提供组织、定位与浏览能力。</p><pre><code>const responsibilities = {
+  reasoning: "ChatGPT",
+  context: "native conversation",
+  organization: "Lattice"
+};</code></pre><button class="native-code-copy">复制代码</button></div><div class="native-actions"><button class="native-copy">复制</button><button aria-label="更多操作" class="native-more">更多</button></div></article>
+    </div>
+    <form class="native-composer"><textarea placeholder="向 ChatGPT 发送消息" aria-label="ChatGPT 原生输入框"></textarea><div><span>＋　工具</span><button type="submit">↑</button></div><small>演示输入框只追加测试内容，不调用模型。</small></form>
+  </main>
+  <script type="module" src="/demo.ts"></script>
+</body></html>
