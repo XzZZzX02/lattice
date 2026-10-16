@@ -1,113 +1,186 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ChevronDown, ChevronRight, ExternalLink, GitBranch, Send } from "lucide-react";
+import { ArrowLeft, ChevronRight, ExternalLink, GitBranch, Send, X } from "lucide-react";
+import { selectionFromContainer } from "../../src/lib/selection";
 import type { ChatSnapshot, Excerpt } from "./types";
 import { type RemoteTurn, type TreeCard, type TreeLive } from "./tree-types";
-import panelStyles from "./panel.css?inline";
+import { linkTreeReferences, referenceRect, resolveTreeReference, type TreeReference } from "./tree-reference";
+import { positionTreeCard } from "./tree-floating";
+import { jumpToAnswer } from "./host";
 import treeStyles from "./tree.css?inline";
-
 import { useConversationTree } from "./useConversationTree";
+
 type TreeActions = ReturnType<typeof useConversationTree>;
 const labels: Record<TreeLive["phase"], string> = { preparing: "正在加载分支起点", forking: "正在创建原生分支", loading: "正在恢复支线上下文", sending: "正在发送到原生分支", waiting: "ChatGPT 正在回答", ready: "上下文已保存在原生分支", error: "需要检查原生页面" };
+const noTurns: RemoteTurn[] = [];
 
-function ThreadCard({ card, tree, depth = 0 }: { card: TreeCard; tree: TreeActions; depth?: number }) {
+function ancestry(card: TreeCard, cards: TreeCard[]) {
+  const chain = [card];
+  while (chain[0].parentId) {
+    const parent = cards.find((item) => item.id === chain[0].parentId);
+    if (!parent || chain.some((item) => item.id === parent.id)) break;
+    chain.unshift(parent);
+  }
+  return chain;
+}
+
+function ThreadCard({ card, tree }: { card: TreeCard; tree: TreeActions }) {
   const state = tree.live[card.id];
   const busy = !!state && !["ready", "error"].includes(state.phase);
   const [submitting, setSubmitting] = useState(false);
-  const [selected, setSelected] = useState<{ id: string; text: string } | null>(null);
-  const turns = state?.turns ?? [];
-  useEffect(() => { if (!card.collapsed && card.targetKey && !state) void tree.resume(card); }, [card, state, tree]);
+  const [selected, setSelected] = useState<{ id: string; anchor: Excerpt } | null>(null);
+  const editor = useRef<HTMLTextAreaElement>(null);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const persist = useRef(() => {});
+  const history = useRef<HTMLDivElement>(null);
+  const follow = useRef(true);
+  const turns = state?.turns ?? noTurns;
+  const chain = ancestry(card, tree.cards);
+
+  useEffect(() => { if (card.targetKey && !state) void tree.resume(card); }, [card, state, tree]);
+  useLayoutEffect(() => {
+    persist.current = () => {
+      const value = editor.current?.value;
+      if (value !== undefined && value !== card.draft) void tree.update(card.id, { draft: value });
+    };
+    const node = editor.current;
+    const root = node?.getRootNode();
+    const focused = root instanceof ShadowRoot ? root.activeElement === node : document.activeElement === node;
+    if (node && (busy || !focused)) node.value = card.draft;
+  }, [card, tree, busy]);
+  // Pointerdown dismissal can remove the editor before blur. Flush before the
+  // DOM is detached so returning to the main line never loses a draft.
+  useLayoutEffect(() => () => { clearTimeout(timer.current); persist.current(); }, []);
+  useLayoutEffect(() => {
+    if (follow.current && history.current) history.current.scrollTop = history.current.scrollHeight;
+  }, [turns, state?.pending]);
+
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const text = String(new FormData(event.currentTarget).get("question") ?? "");
+    const text = editor.current?.value ?? "";
     if (!text.trim() || busy || submitting) return;
+    clearTimeout(timer.current);
+    follow.current = true;
     setSubmitting(true);
     try { await tree.send(card, text); } finally { setSubmitting(false); }
   }
-  function child(turn: RemoteTurn) {
-    const text = selected?.id === turn.id ? selected.text : turn.text.slice(0, 120);
-    const anchor: Excerpt = { id: crypto.randomUUID(), messageId: turn.id, text, startOffset: 0, endOffset: text.length, note: "", createdAt: new Date().toISOString() };
+  function child(turn: RemoteTurn, element: HTMLElement) {
+    const raw = element.textContent ?? turn.text;
+    const text = raw.trim().slice(0, 120);
+    const startOffset = raw.indexOf(text);
+    const anchor: Excerpt = selected?.id === turn.id ? selected.anchor : { id: crypto.randomUUID(), messageId: turn.id, text, startOffset, endOffset: startOffset + text.length, note: "", createdAt: new Date().toISOString() };
     void tree.create({ id: turn.id, stableId: /^(message|turn):/.test(turn.id) }, anchor, card);
+    window.getSelection()?.removeAllRanges();
     setSelected(null);
   }
-  return <article className="thread-card" data-tree-card-id={card.id} aria-label={`支线：${card.label}`} style={{ "--depth": depth } as React.CSSProperties}>
+  return <article className="thread-card" data-tree-card-id={card.id} aria-label={`支线：${card.label}`}>
+    <nav className="thread-breadcrumb" aria-label="当前支线路径">
+      <button onClick={tree.dismiss}><ArrowLeft size={12} />返回主线</button>
+      {chain.slice(0, -1).map((parent) => <span key={parent.id}><ChevronRight size={11} /><button onClick={() => void tree.focus(parent)} title={parent.label}>{parent.label}</button></span>)}
+      <span><ChevronRight size={11} /><strong title={card.label}>{card.label}</strong></span>
+    </nav>
     <header className="thread-header">
-      <button className="thread-toggle" onClick={() => void tree.update(card.id, { collapsed: !card.collapsed })} aria-expanded={!card.collapsed} aria-label={`${card.collapsed ? "展开" : "收起"}支线：${card.label}`}>
-        {card.collapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}<GitBranch size={14} /><strong>{card.label}</strong><span>{turns.length ? `${turns.length} 轮` : card.targetKey ? "已保存" : "新支线"}</span>
-      </button>
+      <GitBranch size={15} /><strong>{card.label}</strong><span>{turns.length ? `${turns.length} 轮` : card.targetKey ? "已保存" : "新支线"}</span>
       <button className="icon-button" title="打开原生分支，使用文件、引用和工具" aria-label={`打开原生分支：${card.label}`} onClick={() => void tree.open(card)}><ExternalLink size={14} /></button>
+      <button className="icon-button" aria-label={`收起支线：${card.label}`} title="回到主线时也会自动收起" onClick={tree.dismiss}><X size={16} /></button>
     </header>
-    {!card.collapsed && <div className="thread-content">
+    <div className="thread-history" ref={history} onScroll={() => { const node = history.current; if (node) follow.current = node.scrollHeight - node.scrollTop - node.clientHeight < 48; }}>
       {card.anchor && <blockquote className="thread-anchor">{card.anchor.text}</blockquote>}
-      {card.targetKey && !turns.length && !busy && <p className="thread-hint">支线上下文保存在 ChatGPT。可继续提问，或打开原生分支查看完整历史。</p>}
-      {!card.targetKey && !busy && <p className="thread-hint">围绕这里追问。首次发送会创建原生分支，主线保持原位。</p>}
-      <div className="thread-turns">{turns.map((turn) => <section key={turn.id} className="thread-turn">
+      {!turns.length && !busy && <p className="thread-hint">{card.targetKey ? "支线上下文保存在 ChatGPT，可继续提问。" : "围绕这段引用追问。首次发送会创建原生分支。"}</p>}
+      {turns.map((turn) => <section key={turn.id} className="thread-turn">
         <p className="thread-question">{turn.question}</p>
-        <div className="thread-answer" onMouseUp={(event) => { const selection = event.currentTarget.getRootNode() instanceof ShadowRoot ? (event.currentTarget.getRootNode() as ShadowRoot & { getSelection?: () => Selection }).getSelection?.() ?? window.getSelection() : window.getSelection(); const text = selection?.toString().trim(); if (text) setSelected({ id: turn.id, text: text.slice(0, 2000) }); }}>
+        <div className="thread-answer" data-tree-message-id={turn.id} onMouseUp={(event) => {
+          const root = event.currentTarget.getRootNode() as ShadowRoot & { getSelection?: () => Selection };
+          const selection = root.getSelection?.() ?? window.getSelection();
+          const resolved = selectionFromContainer(event.currentTarget, "", selection);
+          if (resolved) setSelected({ id: turn.id, anchor: { id: crypto.randomUUID(), messageId: turn.id, text: resolved.text, startOffset: resolved.renderedStartOffset, endOffset: resolved.renderedEndOffset, note: "", createdAt: new Date().toISOString() } });
+        }}>
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ children, ...props }) => <a {...props} target="_blank" rel="noreferrer">{children}</a> }}>{turn.markdown || turn.text || "正在生成…"}</ReactMarkdown>
         </div>
-        <button className="thread-child-button" disabled={!card.targetKey || busy} onClick={() => child(turn)}><GitBranch size={13} />{selected?.id === turn.id ? `追问「${selected.text.slice(0, 20)}」` : "从这条回答展开子支线"}</button>
-        {tree.cards.filter((item) => item.parentId === card.id && item.sourceMessageId === turn.id).map((item) => <ThreadCard key={item.id} card={item} tree={tree} depth={depth + 1} />)}
-      </section>)}</div>
-      {state?.pending && busy && <p className="thread-pending">{state.pending}</p>}
-      <p className={`thread-status ${state?.phase === "error" ? "is-error" : ""}`} role="status">{state ? state.error || labels[state.phase] : "仅此支线累积后续问答"}</p>
+        <button className="thread-child-button" disabled={!card.targetKey || busy} onClick={(event) => child(turn, event.currentTarget.previousElementSibling as HTMLElement)}><GitBranch size={13} />{selected?.id === turn.id ? `追问「${selected.anchor.text.slice(0, 20)}」` : "从这条回答展开子支线"}</button>
+        <div className="thread-child-links">{tree.cards.filter((item) => item.parentId === card.id && item.sourceMessageId === turn.id).map((item) => <button key={item.id} onClick={() => void tree.focus(item)}><GitBranch size={11} />{item.label}</button>)}</div>
+      </section>)}
+      {state?.pending && busy && !turns.some((turn) => turn.question === state.pending) && <p className="thread-pending">{state.pending}</p>}
+    </div>
+    <footer className="thread-footer">
+      <p className={`thread-status ${state?.phase === "error" ? "is-error" : ""}`} role="status">{state ? state.error || labels[state.phase] : "此支线独立保留后续问答"}</p>
       {tree.error && <p className="thread-status is-error" role="alert">{tree.error}</p>}
       <form className="thread-composer" onSubmit={(event) => void submit(event)}>
-        <textarea key={`${card.id}:${card.draft}`} name="question" defaultValue={card.draft} aria-label={`在支线中追问：${card.label}`} placeholder={turns.length ? "沿着这条支线继续问…" : "这个名词是什么意思？"} rows={2} maxLength={20000} disabled={busy || submitting} onBlur={(event) => { if (event.target.value !== card.draft) void tree.update(card.id, { draft: event.target.value }); }} />
+        <textarea ref={editor} name="question" defaultValue={card.draft} aria-label={`在支线中追问：${card.label}`} placeholder={turns.length ? "沿着这条支线继续问…" : "这个名词是什么意思？"} rows={2} maxLength={20000} disabled={busy || submitting} onChange={() => { clearTimeout(timer.current); timer.current = setTimeout(() => persist.current(), 250); }} onBlur={() => persist.current()} onKeyDown={(event) => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} />
         <button className="thread-send" type="submit" disabled={busy || submitting} aria-label={`发送支线问题：${card.label}`}><Send size={14} /><span>{busy || submitting ? "处理中" : "发送"}</span></button>
       </form>
-      <p className="thread-native-note">问答由 ChatGPT 原生分支处理 · 工具与附件可在原生页继续</p>
-    </div>}
+      <p className="thread-native-note">点击主线或滚动主线收起 · Esc 收起 · 上下文保留</p>
+    </footer>
   </article>;
 }
 
-interface InlineTarget { messageId: string; host: HTMLElement; container: HTMLElement }
-export function InlineConversationTree({ snapshot, tree, hidden }: { snapshot: ChatSnapshot; tree: TreeActions; hidden: boolean }) {
-  const targets = useRef(new Map<string, InlineTarget>());
-  const [portals, setPortals] = useState<InlineTarget[]>([]);
+export function FloatingConversationTree({ snapshot, tree, hidden }: { snapshot: ChatSnapshot; tree: TreeActions; hidden: boolean }) {
+  const surface = useRef<HTMLElement>(null);
+  const references = useRef<TreeReference[]>([]);
+  const actions = useRef(tree);
+  const [position, setPosition] = useState(() => positionTreeCard({ left: innerWidth / 2, right: innerWidth / 2, top: 160, bottom: 180 }, { width: innerWidth, height: innerHeight }));
+  const card = tree.cards.find((item) => item.id === tree.focusTarget?.id);
+  const rootCard = card ? ancestry(card, tree.cards)[0] : undefined;
+  const cardId = card?.id;
+  const rootId = rootCard?.id;
+  const sourceMessageId = rootCard?.sourceMessageId;
+
+  useLayoutEffect(() => { actions.current = tree; }, [tree]);
   useLayoutEffect(() => {
-    const wanted = new Set(tree.cards.filter((card) => !card.parentId).map((card) => card.sourceMessageId));
-    let changed = false;
-    for (const [messageId, target] of targets.current) {
-      if (!wanted.has(messageId) || !snapshot.answers.some((answer) => answer.id === messageId)) { target.host.remove(); targets.current.delete(messageId); changed = true; }
+    const matched: TreeReference[] = [];
+    for (const item of tree.cards) {
+      const container = !item.parentId ? snapshot.answers.find((answer) => answer.id === item.sourceMessageId)?.contentElement : item.parentId === card?.id ? [...surface.current?.querySelectorAll<HTMLElement>("[data-tree-message-id]") ?? []].find((element) => element.dataset.treeMessageId === item.sourceMessageId) : undefined;
+      const reference = container ? resolveTreeReference(item, container) : null;
+      if (reference) matched.push(reference);
     }
-    for (const answer of snapshot.answers) {
-      if (!wanted.has(answer.id)) continue;
-      let target = targets.current.get(answer.id);
-      if (!target) {
-        const host = document.createElement("div");
-        host.setAttribute("data-lattice-tree-host", answer.id);
-        const shadow = host.attachShadow({ mode: "open" });
-        const style = document.createElement("style");
-        style.textContent = panelStyles + treeStyles;
-        const container = document.createElement("div");
-        shadow.append(style, container);
-        target = { messageId: answer.id, host, container };
-        targets.current.set(answer.id, target);
-        changed = true;
-      }
-      if (answer.element.nextElementSibling !== target.host) { answer.element.after(target.host); changed = true; }
-      target.host.style.display = hidden ? "none" : "block";
-    }
-    if (changed) setPortals([...targets.current.values()]);
-  }, [snapshot.answers, tree.cards, hidden]);
+    references.current = matched;
+    if (hidden) return;
+    return linkTreeReferences(matched, card?.id, (item) => void actions.current.focus(item));
+  }, [snapshot.answers, tree.cards, tree.live, card?.id, hidden]);
+
   useLayoutEffect(() => {
-    if (!tree.focusTarget) return;
-    for (const target of portals) {
-      const card = [...target.container.querySelectorAll<HTMLElement>("[data-tree-card-id]")].find((item) => item.dataset.treeCardId === tree.focusTarget?.id);
-      if (card) { card.scrollIntoView({ behavior: "smooth", block: "center" }); break; }
+    if (!cardId || hidden) return;
+    const source = snapshot.answers.find((answer) => answer.id === sourceMessageId);
+    const reference = references.current.find((item) => item.card.id === rootId);
+    if (source && reference && !referenceRect(reference)) jumpToAnswer(source);
+    function place() {
+      const root = surface.current?.getRootNode() as ShadowRoot | undefined;
+      const panel = root?.querySelector<HTMLElement>(".panel");
+      const panelRect = panel?.getBoundingClientRect();
+      const right = innerWidth >= 1180 && panelRect && panelRect.width && getComputedStyle(panel!).display !== "none" ? panelRect.left - 12 : innerWidth;
+      const anchor = reference && referenceRect(reference) || { left: innerWidth / 2, right: innerWidth / 2, top: 160, bottom: 180 };
+      const next = positionTreeCard(anchor, { width: innerWidth, height: innerHeight, right }, surface.current?.getBoundingClientRect().height || undefined);
+      setPosition((previous) => Object.keys(next).every((key) => previous[key as keyof typeof next] === next[key as keyof typeof next]) ? previous : next);
     }
-  }, [tree.focusTarget, portals]);
-  useEffect(() => { const mounted = targets.current; return () => { for (const target of mounted.values()) target.host.remove(); mounted.clear(); }; }, []);
-  return <>{portals.map((target) => createPortal(<div className="lattice inline-tree" aria-label="回答的支线对话">{tree.cards.filter((card) => !card.parentId && card.sourceMessageId === target.messageId).map((card) => <ThreadCard key={card.id} card={card} tree={tree} />)}</div>, target.container, target.messageId))}</>;
+    place();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
+    if (surface.current) observer?.observe(surface.current);
+    document.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => { observer?.disconnect(); document.removeEventListener("scroll", place, true); window.removeEventListener("resize", place); };
+  }, [tree.focusTarget, cardId, rootId, sourceMessageId, snapshot.answers, hidden]);
+  useLayoutEffect(() => { if (cardId && !hidden) surface.current?.focus({ preventScroll: true }); }, [tree.focusTarget, cardId, hidden]);
+
+  useEffect(() => {
+    if (!cardId) return;
+    const outside = (event: Event) => { if (surface.current && !event.composedPath().includes(surface.current)) actions.current.dismiss(); };
+    const key = (event: KeyboardEvent) => { if (event.key === "Escape") { event.stopPropagation(); actions.current.dismiss(); } else if (["PageDown", "PageUp", "Home", "End"].includes(event.key) && !event.composedPath().includes(surface.current!)) actions.current.dismiss(); };
+    document.addEventListener("pointerdown", outside, true);
+    document.addEventListener("focusin", outside, true);
+    document.addEventListener("wheel", outside, { capture: true, passive: true });
+    document.addEventListener("touchstart", outside, { capture: true, passive: true });
+    window.addEventListener("keydown", key, true);
+    return () => { document.removeEventListener("pointerdown", outside, true); document.removeEventListener("focusin", outside, true); document.removeEventListener("wheel", outside, true); document.removeEventListener("touchstart", outside, true); window.removeEventListener("keydown", key, true); };
+  }, [cardId]);
+
+  return <><style>{treeStyles}</style>{card && !hidden && <section ref={surface} className="floating-tree" data-lattice-tree-host="" role="dialog" aria-modal="false" aria-label={`悬浮支线：${card.label}`} tabIndex={-1} style={position}><ThreadCard key={card.id} card={card} tree={tree} /></section>}</>;
 }
 
 export function TreeOutline({ tree, messageId }: { tree: TreeActions; messageId: string }) {
   const roots = tree.cards.filter((card) => !card.parentId && card.sourceMessageId === messageId);
   function item(card: TreeCard): React.ReactNode {
-    return <li key={card.id}><button className="tree-outline-link" onClick={() => void tree.focus(card)}><GitBranch size={12} /><span>{card.label}</span><small>{card.collapsed ? "已收起" : "展开中"}</small></button><ul>{tree.cards.filter((child) => child.parentId === card.id).map(item)}</ul></li>;
+    return <li key={card.id}><button className="tree-outline-link" onClick={() => void tree.focus(card)}><GitBranch size={12} /><span>{card.label}</span><small>{tree.focusTarget?.id === card.id ? "查看中" : "已收起"}</small></button><ul>{tree.cards.filter((child) => child.parentId === card.id).map(item)}</ul></li>;
   }
   return roots.length ? <ul className="tree-outline">{roots.map(item)}</ul> : null;
 }

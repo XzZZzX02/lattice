@@ -47,6 +47,7 @@ async function verifyContent(content, html, answerSelector, question, actionId) 
   window.matchMedia = () => ({ matches: true, addEventListener() {}, removeEventListener() {} });
   window.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
   window.HTMLElement.prototype.scrollIntoView = () => {};
+  window.Range.prototype.getClientRects = () => [{ left: 80, right: 180, top: 100, bottom: 120, width: 100, height: 20 }];
   window.addEventListener("error", (event) => errors.push(event.error ?? new Error(event.message)));
   window.addEventListener("unhandledrejection", (event) => errors.push(event.reason));
 
@@ -72,10 +73,14 @@ async function verifyContent(content, html, answerSelector, question, actionId) 
     window.eval(content);
     const shadow = () => window.document.getElementById("lattice-chatgpt-extension")?.shadowRoot;
     await waitFor(() => shadow()?.querySelector("[aria-label='置顶回答 1']")?.disabled === false, errors);
-    const inline = () => window.document.querySelector('[data-lattice-tree-host]')?.shadowRoot;
-    await waitFor(() => inline()?.querySelector('.thread-answer'), errors);
-    assert.equal(inline().querySelector('.thread-answer a').href, 'https://example.org/branch-source');
-    assert.ok(inline().querySelector('.thread-question').textContent.includes('Explain this term'));
+    const floating = () => shadow()?.querySelector('.floating-tree');
+    assert.equal(floating(), null, 'Loading saved cards must not open a popover over the main conversation');
+    const openReference = () => answer.dispatchEvent(new window.MouseEvent('click', { bubbles: true, clientX: 100, clientY: 110 }));
+    openReference();
+    await waitFor(() => floating()?.querySelector('.thread-answer'), errors);
+    assert.equal(floating().getAttribute('aria-modal'), 'false');
+    assert.equal(floating().querySelector('.thread-answer a').href, 'https://example.org/branch-source');
+    assert.ok(floating().querySelector('.thread-question').textContent.includes('Explain this term'));
     assert.equal(shadow().querySelectorAll(".answer-card").length, 1);
     assert.ok(shadow().querySelector(".answer-card").textContent.includes(question));
     assert.equal(answer.parentElement, parent);
@@ -92,11 +97,12 @@ async function verifyContent(content, html, answerSelector, question, actionId) 
     shadow().querySelector("[aria-label='收起工作区']").click();
     await waitFor(() => window.document.documentElement.dataset.latticeOpen === "false", errors);
     assert.equal(answer.dataset.latticeActive, "false");
-    // The core conversation tree stays usable when the auxiliary workspace is closed.
-    inline().querySelector('.thread-toggle').click();
-    await waitFor(() => !inline().querySelector('.thread-answer'), errors);
-    inline().querySelector('.thread-toggle').click();
-    await waitFor(() => inline().querySelector('.thread-answer'), errors);
+    // Main-line focus dismisses the surface; the original quote opens it again
+    // even when the auxiliary workspace is closed.
+    composer.dispatchEvent(new window.Event('focusin', { bubbles: true }));
+    await waitFor(() => !floating(), errors);
+    openReference();
+    await waitFor(() => floating()?.querySelector('.thread-answer'), errors);
     assert.equal(answer.innerHTML, nativeHtml);
     assert.equal(window.document.getElementById('native-composer'), composer);
   } finally { window.close(); }
@@ -122,5 +128,5 @@ export async function verifyExtensionBundle(directory) {
   });
   assert.equal(result.ok, true);
   assert.deepEqual([...result.presentation.favorites], ["message:answer-one"]);
-  console.log("Built extension verified without Node globals (legacy/current DOM, inline context tree, collapse/reopen, graphs, native controls, service worker).");
+  console.log("Built extension verified without Node globals (legacy/current DOM, quote click, floating tree, main-line dismissal, graphs, native controls, service worker).");
 }

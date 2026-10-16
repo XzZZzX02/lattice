@@ -7,8 +7,8 @@ import type { ExtensionPlatform, StorageArea } from "./platform";
 import type { ExtensionMessage } from "./types";
 const url = "https://chatgpt.com/c/main";
 afterEach(() => { document.body.innerHTML = ""; vi.unstubAllGlobals(); });
-describe("inline conversation cards", () => {
-  it("keeps the main answer and composer while sending, collapsing, reopening and growing a child", async () => {
+describe("floating conversation cards", () => {
+  it("opens from an unchanged source, preserves drafts on return to the main line, and navigates child cards", async () => {
     const local: Record<string, unknown> = {};
     const session: Record<string, unknown> = {};
     const listeners = new Set<Parameters<ExtensionPlatform["storage"]["onChanged"]["addListener"]>[0]>();
@@ -19,6 +19,9 @@ describe("inline conversation cards", () => {
     const tree = createTreeCoordinator(api);
     vi.stubGlobal("chrome", api);
     vi.stubGlobal("matchMedia", () => ({ matches: true }));
+    vi.stubGlobal("CSS", { highlights: new Map() });
+    vi.stubGlobal("Highlight", class extends Set<Range> { constructor(...ranges: Range[]) { super(ranges); } });
+    Object.defineProperty(Range.prototype, "getClientRects", { configurable: true, value: () => [{ left: 80, right: 180, top: 100, bottom: 120, width: 100, height: 20 }] });
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
     document.body.innerHTML = '<main><div data-message-author-role="user" data-message-id="u">Explain Transformer</div><article><div data-message-author-role="assistant" data-message-id="a"><p>KV Cache is mentioned here.</p><a href="https://example.org">Native citation</a></div></article><textarea id="main-composer"></textarea></main>';
     const answer = document.querySelector("[data-message-id='a']")!;
@@ -26,11 +29,11 @@ describe("inline conversation cards", () => {
     const composer = document.getElementById("main-composer");
     const rendered = render(<LatticeApp getHref={() => url} />);
     fireEvent.click(await rendered.findByRole("button", { name: "就地追问" }));
-    await waitFor(() => expect(document.querySelector("[data-lattice-tree-host]")?.shadowRoot?.querySelector("textarea")).toBeTruthy());
-    const shadow = document.querySelector("[data-lattice-tree-host]")!.shadowRoot!;
-    const ui = () => within(shadow.querySelector(".inline-tree") as HTMLElement);
+    await rendered.findByRole("dialog", { name: "悬浮支线：关于这条回答" });
+    const ui = () => within(rendered.container.querySelector(".floating-tree") as HTMLElement);
+    const reopen = () => fireEvent.click(answer.querySelector("p")!, { clientX: 100, clientY: 110 });
     fireEvent.change(ui().getByRole("textbox"), { target: { value: "What does it cache?" } });
-    fireEvent.submit(shadow.querySelector("form")!);
+    fireEvent.submit(rendered.container.querySelector(".thread-composer")!);
     await waitFor(() => expect(ui().getByRole("textbox")).toBeDisabled());
     const report: NativeReport = { url, key: "chatgpt:main", title: "Main", generating: false, composerReady: true, answers: [{ id: "message:a", question: "Explain Transformer", text: "KV Cache", markdown: "KV Cache" }] };
     await act(async () => {
@@ -38,18 +41,37 @@ describe("inline conversation cards", () => {
       await tree.handle({ type: "native:ack", commandId: fork.ok ? fork.command!.id : "" }, 10);
       const send = await tree.handle({ type: "native:report", report: { ...report, url: "https://chatgpt.com/c/branch", key: "chatgpt:branch" } }, 10);
       await tree.handle({ type: "native:ack", commandId: send.ok ? send.command!.id : "" }, 10);
-      await tree.handle({ type: "native:report", report: { ...report, url: "https://chatgpt.com/c/branch", key: "chatgpt:branch", answers: [...report.answers, { id: "message:b", question: "What does it cache?", text: "Keys and values, like a bookmark.", markdown: "Keys and values, like a **bookmark**." }] } }, 10);
+      await tree.handle({ type: "native:report", report: { ...report, url: "https://chatgpt.com/c/branch", key: "chatgpt:branch", answers: [...report.answers, { id: "message:b", question: send.ok ? send.command!.text! : "", text: "Keys and values, like a bookmark.", markdown: "Keys and values, like a **bookmark**." }] } }, 10);
     });
     await waitFor(() => expect(ui().getByText("bookmark")).toBeTruthy(), { timeout: 2500 });
-    fireEvent.click(ui().getByRole("button", { name: "收起支线：关于这条回答" }));
-    await waitFor(() => expect(ui().queryByRole("textbox")).toBeNull());
-    fireEvent.click(ui().getByRole("button", { name: "展开支线：关于这条回答" }));
+    fireEvent.change(ui().getByRole("textbox"), { target: { value: "Unsent follow-up" } });
+    fireEvent.pointerDown(answer);
+    await waitFor(() => expect(rendered.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect((local[TREE_KEY] as TreeCard[])[0].draft).toBe("Unsent follow-up"));
+    expect(CSS.highlights.get("lattice-tree-references")?.size).toBe(1);
+    reopen();
+    await waitFor(() => expect(ui().getByText("bookmark")).toBeTruthy());
+    expect(ui().getByRole("textbox")).toHaveValue("Unsent follow-up");
+    fireEvent.wheel(rendered.container.querySelector(".thread-history")!);
+    expect(rendered.queryByRole("dialog")).toBeTruthy();
+    fireEvent.wheel(answer);
+    await waitFor(() => expect(rendered.queryByRole("dialog")).toBeNull());
+    reopen();
     await waitFor(() => expect(ui().getByText("bookmark")).toBeTruthy());
     fireEvent.click(ui().getByRole("button", { name: "从这条回答展开子支线" }));
     await waitFor(() => expect((local[TREE_KEY] as TreeCard[])).toHaveLength(2));
     expect((local[TREE_KEY] as TreeCard[])[1]).toMatchObject({ parentId: (local[TREE_KEY] as TreeCard[])[0].id, sourceKey: "chatgpt:branch", sourceMessageId: "message:b" });
+    await waitFor(() => expect(ui().getByRole("textbox")).toHaveAttribute("aria-label", "在支线中追问：Keys and values, like a bookmark."));
+    fireEvent.click(ui().getByRole("button", { name: "关于这条回答" }));
+    await waitFor(() => expect(ui().getByText("bookmark")).toBeTruthy());
+    fireEvent.click(ui().getByText("bookmark"), { clientX: 100, clientY: 110 });
+    await waitFor(() => expect(ui().getByRole("textbox")).toHaveAttribute("aria-label", "在支线中追问：Keys and values, like a bookmark."));
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(rendered.queryByRole("dialog")).toBeNull());
     fireEvent.click(rendered.container.querySelectorAll(".tree-outline-link")[1]);
-    await waitFor(() => expect(vi.mocked(HTMLElement.prototype.scrollIntoView).mock.instances.some((element) => (element as HTMLElement).dataset.treeCardId === (local[TREE_KEY] as TreeCard[])[1].id)).toBe(true));
+    await rendered.findByRole("dialog");
+    fireEvent.focusIn(composer!);
+    await waitFor(() => expect(rendered.queryByRole("dialog")).toBeNull());
     expect(answer.innerHTML).toBe(originalHtml);
     expect(document.getElementById("main-composer")).toBe(composer);
     expect((composer as HTMLTextAreaElement).value).toBe("");

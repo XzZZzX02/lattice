@@ -1,6 +1,6 @@
-# Lattice for ChatGPT · 树形对话原型 0.2.0
+# Lattice for ChatGPT · 悬浮树形对话原型 0.3.0
 
-在冗长对话里读到不熟悉的专业名词，选中它，在原回答下展开支线卡片连续追问；弄懂后收起，继续主线。支线可以再长出子支线，每张卡片绑定自己的 ChatGPT 原生分支。
+在冗长对话里读到不熟悉的专业名词，选中它，在引用旁展开悬浮支线卡片连续追问。原文留下下划线，点击即可重新展开；回到主线阅读或输入时自动收起。支线可以再长出子支线，每张卡片绑定自己的 ChatGPT 原生分支。
 
 ## 安装与更新
 
@@ -12,10 +12,10 @@
 
 1. 在 ChatGPT 中正常提问，让主线回答出现。
 2. 选中回答中的名词，如“KV Cache”，点击“支线追问”。也可从右侧对话树点击“就地追问”。此时只创建本地草稿，不发送问题。
-3. 在原回答下面的支线卡片中输入问题，点击发送。扩展在单独的原生标签页创建 ChatGPT 分支，卡片显示分支里的回答。主线输入框和当前页面继续保留。
-4. 继续在卡片里追问，使用同一原生会话的上下文。收起后保留草稿、树形关系及原生上下文地址；再次展开可以继续。
-5. 从支线的一条回答点击“展开子支线”；也可以先在该回答中选中文字，再点击追问按钮。子支线从父支线的这条回答分叉。
-6. 主线继续使用 ChatGPT 原生输入框。侧栏对话树可以定位各张卡片。
+3. 在引用旁的悬浮卡片中输入问题，点击发送。扩展在单独的原生标签页创建 ChatGPT 分支，卡片显示分支里的回答。卡片不插入主线排版，不推开后续消息。
+4. 点击主线正文、进入主线输入框、滚动主线、按 Esc 或点击“返回主线”，卡片自动收起；上下文、草稿和树形关系保留。再次点击原文的下划线，恢复同一条支线。滚动卡片内部历史不会收起。
+5. 在支线回答中选中文字，再点击追问按钮创建子支线。父卡片的引用也会有下划线，点击可重开子卡片；顶部路径可以回到父支线。每次显示当前正在阅读的一张悬浮卡片。
+6. 主线继续使用 ChatGPT 原生输入框。侧栏对话树也可以打开各张卡片；重新加载页面时默认收起，保留原文下划线。
 
 支线顶部的“打开原生分支”用于查看完整原文、交互式引用、附件、Canvas、模型选择、工具和 agent 操作或确认窗口。卡片展示的是可阅读的 Markdown 投影；这些复杂原生界面在原生页继续使用。
 
@@ -54,8 +54,8 @@ pnpm extension:dev
 
 构建输出与桌面版隔离。生成 ZIP 前会直接执行最终 content script 和 service worker，检查无 Node 全局对象时的启动、新旧原生 DOM 与原生控件保留。本地演示使用模拟分支与回答，页面明确标注，不产生模型调用。
 
-真实 Chrome 的连续追问、收起重开、父子支线和主线继续已验证，详见 [0.2.0 验证记录](ACCEPTANCE.md)。
+原生分支上下文与本轮悬浮交互的验证范围分开记录，详见 [验证记录](ACCEPTANCE.md)。
 
-代码：`src/ConversationTree.tsx` 为就地卡片与树目录，`src/tree-background.ts` 为原生分支协调，`src/native-relay.ts` 为原生页面输入与只读回答投影。详见 `docs/adr/0005-inline-context-conversation-tree.md`。
+代码：`src/ConversationTree.tsx` 为悬浮卡片与树目录，`src/tree-reference.ts` 为非破坏式引用标记，`src/tree-background.ts` 为原生分支协调，`src/native-relay.ts` 为原生页面输入与只读回答投影。详见 `docs/adr/0006-reference-anchored-floating-tree.md`。
 
 参考：[Chrome Tabs](https://developer.chrome.com/docs/extensions/reference/api/tabs)、[Chrome Message passing](https://developer.chrome.com/docs/extensions/develop/concepts/messaging)。

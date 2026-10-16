@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Lattice for ChatGPT",
-  "version": "0.2.0",
-  "description": "主线不断、支线就地追问：可收起并保存上下文的树形 ChatGPT 对话。",
+  "version": "0.3.0",
+  "description": "点击原文下划线展开悬浮支线，回到主线自动收起，并保留树形对话与原生上下文。",
   "minimum_chrome_version": "120",
   "permissions": ["storage"],
   "background": { "service_worker": "background.js" },

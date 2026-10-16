@@ -2,6 +2,8 @@
 html[data-lattice-worker="true"] :is(#lattice-chatgpt-extension, [data-lattice-tree-host]) { display: none !important; }
 ::highlight(lattice-excerpt) { background-color: #71b7ff55; color: inherit; }
 ::highlight(lattice-linked-excerpts) { background-color: #71b7ff25; text-decoration: underline; color: inherit; }
+::highlight(lattice-tree-references) { color: inherit; text-decoration: underline solid #468ec7 1.5px; text-underline-offset: 4px; }
+::highlight(lattice-tree-active-reference) { color: inherit; background-color: #71b7ff20; text-decoration: underline solid #246ca3 2px; text-underline-offset: 4px; }
 html[data-lattice-cards="true"] [data-lattice-answer] {
   border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
   border-radius: 16px;

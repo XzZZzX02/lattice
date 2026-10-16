@@ -7,7 +7,7 @@ import { MindMap } from "./MindMap";
 import { DataControls } from "./DataControls";
 import { linkExcerptHighlights } from "./highlights";
 import { collectChat, decorateAnswers, excerptRange, getAnswerSelection, jumpToAnswer, observeChat } from "./host";
-import { InlineConversationTree, TreeOutline } from "./ConversationTree";
+import { FloatingConversationTree, TreeOutline } from "./ConversationTree";
 import { useConversationTree } from "./useConversationTree";
 import { platform, request } from "./platform";
 import { BRANCHES_KEY, emptyPresentation, mutatePresentation, presentationKey, readPresentation } from "./presentation";
@@ -127,7 +127,7 @@ export function LatticeApp({ getHref = liveHref }: { getHref?: () => string }) {
     setSelection(null);
     try {
       const id = await tree.create(answer, excerpt);
-      if (id) { window.getSelection()?.removeAllRanges(); jumpToAnswer(answer); setToast("支线卡片已在原回答下展开。首次发送时创建原生分支。"); }
+      if (id) { window.getSelection()?.removeAllRanges(); setToast("已展开悬浮支线。点击下划线引用可重开，回到主线自动收起。"); }
     } finally { setBranching(false); }
   }
 
@@ -189,7 +189,7 @@ export function LatticeApp({ getHref = liveHref }: { getHref?: () => string }) {
   if (floating && selection && selection.anchor.bottom + 52 < innerHeight) floating.top = selection.anchor.bottom + 8;
 
   return <div className="lattice">
-    <InlineConversationTree snapshot={snapshot} tree={tree} hidden={!!snapshot.nativeOverlay} />
+    <FloatingConversationTree snapshot={snapshot} tree={tree} hidden={!!snapshot.nativeOverlay} />
     {!snapshot.nativeOverlay && <button className={`launcher ${open ? "is-open" : ""}`} ref={launcher} onClick={() => { setOpen(!open); if (!open) setTimeout(() => searchInput.current?.focus(), 0); }} aria-label={open ? "收起 Lattice" : "打开 Lattice"} aria-expanded={open} type="button"><LatticeLogo /><span>Lattice</span><ChevronRight size={14} /></button>}
     {open && <aside className={`panel ${wide ? "wide" : ""}`} style={{ display: workspaceVisible ? undefined : "none" }} aria-label="Lattice 对话工作区" onKeyDown={(event) => { if (event.key === "Escape") { setOpen(false); launcher.current?.focus(); } }}>
       <header className="panel-header"><div className="brand"><LatticeLogo /><strong>Lattice</strong><span>for ChatGPT</span></div><div><button className="icon-button" aria-label={wide ? "收窄工作区" : "展开工作区"} onClick={() => setWide(!wide)}>{wide ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button><button className="icon-button" onClick={() => { setOpen(false); launcher.current?.focus(); }} title="收起工作区" aria-label="收起工作区"><PanelRightClose size={17} /></button></div></header>
@@ -200,12 +200,12 @@ export function LatticeApp({ getHref = liveHref }: { getHref?: () => string }) {
       <div className="panel-body">
         {incomingBranch?.excerpt && <section className="branch-context"><span><GitBranch size={13} />这条分支的探索线索</span><blockquote>{incomingBranch.excerpt.text}</blockquote><div className="card-footer"><a href={incomingBranch.sourceUrl}>返回分支起点<ArrowUpRight size={12} /></a><button className="text-button" onClick={() => void copy(incomingBranch.excerpt!.text)}>复制摘录<Copy size={12} /></button></div></section>}
         {view === "answers" && <>
-          <p className="tree-intro">主线保持连续。选中回答中的名词，就地展开可收起、可继续追问的支线。</p>
+          <p className="tree-intro">选中名词创建悬浮支线。点击原文下划线可重开，回到主线自动收起。</p>
           <div className="answer-tools"><label className="search"><Search size={15} /><input ref={searchInput} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="查找问题与回答" aria-label="查找问题与回答" />{query && <button aria-label="清除搜索" onClick={() => setQuery("")}><X size={13} /></button>}</label><button className={`view-toggle ${presentation.cardView ? "enabled" : ""}`} aria-pressed={presentation.cardView} title="切换原文的卡片排版" disabled={!ready} onClick={() => void mutate({ type: "cardView", enabled: !presentation.cardView })}><LayoutList size={15} /></button></div>
           <div className="answer-list">{!answers.length ? <div className="empty-state"><MessageSquare size={28} /><h2>{query ? "没有匹配的回答" : "让对话在这里展开"}</h2><p>{query ? "试试问题中的另一个关键词。" : "在 ChatGPT 中正常提问。回答出现后，这里会自动生成导航卡片。"}</p></div> : answers.map(({ answer, index }) => <article key={answer.id} className={`answer-card ${activeId === answer.id ? "active" : ""}`}>
             <div className="card-meta"><span>回答 {String(index + 1).padStart(2, "0")}</span><div><button className={`icon-button ${presentation.favorites.includes(answer.id) ? "starred" : ""}`} aria-label={`${presentation.favorites.includes(answer.id) ? "取消置顶" : "置顶"}回答 ${index + 1}`} disabled={!ready || !answer.stableId} onClick={() => void mutate({ type: "favorite", messageId: answer.id, favorite: !presentation.favorites.includes(answer.id) })}><Star size={14} fill={presentation.favorites.includes(answer.id) ? "currentColor" : "none"} /></button><button className="icon-button" aria-label={`重命名回答 ${index + 1} 的卡片`} disabled={!ready || !answer.stableId} onClick={() => setEditing(answer.id)}><Pencil size={13} /></button></div></div>
             {editing === answer.id ? <form className="rename-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); void mutate({ type: "title", messageId: answer.id, title: String(form.get("title") ?? "") }); setEditing(null); }}><input name="title" aria-label="卡片标题" defaultValue={presentation.titles[answer.id] || answer.question} maxLength={160} autoFocus /><button className="icon-button" aria-label="保存卡片标题"><Check size={15} /></button><button className="icon-button" type="button" aria-label="取消重命名" onClick={() => setEditing(null)}><X size={15} /></button></form> : <button className="answer-link" onClick={() => selectAnswer(answer)}><h2>{presentation.titles[answer.id] || answer.question || `回答 ${index + 1}`}</h2><p>{answer.text.slice(0, 170) || "ChatGPT 正在生成回答…"}</p></button>}
-            <div className="card-footer"><button className="text-button" onClick={() => selectAnswer(answer)}>定位原文<ArrowUpRight size={13} /></button><button className="branch-button" disabled={branching || !snapshot.conversationKey || !answer.stableId} onClick={() => void branch(answer)} title="在原回答下展开可连续追问的支线，首次发送时创建原生分支"><GitBranch size={13} />就地追问</button></div>
+            <div className="card-footer"><button className="text-button" onClick={() => selectAnswer(answer)}>定位原文<ArrowUpRight size={13} /></button><button className="branch-button" disabled={branching || !snapshot.conversationKey || !answer.stableId} onClick={() => void branch(answer)} title="在引用旁展开悬浮支线，首次发送时创建原生分支"><GitBranch size={13} />就地追问</button></div>
             <TreeOutline tree={tree} messageId={answer.id} />
             {!answer.stableId && <p className="card-notice">此回答缺少稳定标识，暂时仅支持定位。</p>}
           </article>)}</div>

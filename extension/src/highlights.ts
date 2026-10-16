@@ -11,7 +11,7 @@ export function linkExcerptHighlights(answers: NativeAnswer[], excerpts: Excerpt
   });
   CSS.highlights.set("lattice-linked-excerpts", new Highlight(...ranges.map((item) => item.range)));
   function clicked(event: MouseEvent) {
-    if (event.button !== 0 || event.detail > 1 || !window.getSelection()?.isCollapsed) return;
+    if (event.defaultPrevented || event.button !== 0 || event.detail > 1 || !window.getSelection()?.isCollapsed) return;
     if (!(event.target instanceof Element) || event.target.closest("a, button, input, textarea, [contenteditable], [role='button'], #lattice-chatgpt-extension")) return;
     for (const { excerpt, range } of ranges) {
       for (const rect of range.getClientRects()) {

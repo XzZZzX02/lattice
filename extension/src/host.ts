@@ -125,7 +125,7 @@ export function getAnswerSelection(answers: NativeAnswer[]) {
   return { answer, ...resolved, anchor: { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom } };
 }
 
-export function excerptRange(answer: NativeAnswer, excerpt: Excerpt): Range | null {
+export function excerptRange(answer: Pick<NativeAnswer, "contentElement">, excerpt: Excerpt): Range | null {
   const content = answer.contentElement.textContent ?? "";
   let start = excerpt.startOffset;
   if (content.slice(start, excerpt.endOffset) !== excerpt.text) {
