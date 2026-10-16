@@ -49,6 +49,12 @@ describe("ChatGPT DOM adapter", () => {
     expect(collectChat(document, href).answers[0].stableId).toBe(false);
   });
 
+  it("does not fall back to a cached chat when the active page is a new empty conversation", () => {
+    document.body.innerHTML = currentChat;
+    document.querySelector("[data-app-shell-active-page='true']")!.innerHTML = "<div>New chat composer</div>";
+    expect(collectChat(document, "https://chatgpt.com/").answers).toHaveLength(0);
+  });
+
   it("retains separate IDs for multiple assistant messages within a rendered turn", () => {
     document.body.innerHTML = currentChat;
     const message = document.querySelector("[data-chatgpt-selection-message-id]")!;
@@ -60,7 +66,7 @@ describe("ChatGPT DOM adapter", () => {
 
   it("finds the current turn's native branch menu outside its message content", async () => {
     document.body.innerHTML = currentChat;
-    document.getElementById("current-native-action")!.addEventListener("click", () => {
+    document.getElementById("current-native-action")!.addEventListener("pointerdown", () => {
       const menu = document.createElement("div");
       menu.role = "menu";
       menu.innerHTML = '<button role="menuitem">创建对话分支</button>';

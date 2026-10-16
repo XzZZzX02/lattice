@@ -25,7 +25,8 @@ function messageIdentity(element: HTMLElement): { id: string; stableId: boolean 
 }
 
 export function collectChat(documentRoot = document, href = location.href): ChatSnapshot {
-  const main = documentRoot.querySelector("main");
+  const activePage = documentRoot.querySelector("[data-app-shell-active-page='true']");
+  const main = activePage ? activePage.querySelector("main") : [...documentRoot.querySelectorAll("main")].find((element) => !element.closest("[data-app-shell-active-page='false'], [hidden], [aria-hidden='true']"));
   const answers: NativeAnswer[] = [];
   let question = "";
   const seen = new Set<string>();
@@ -80,7 +81,7 @@ export function observeChat(onChange: (snapshot: ChatSnapshot) => void, getHref 
     // Throttle rather than debounce: keep navigation usable during a long stream.
     if (!timer) timer = setTimeout(update, 180);
   });
-  observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["data-message-id", "data-message-author-role", "data-turn-id", "data-testid", "data-chatgpt-search-unit-key", "data-chatgpt-search-message-ids", "data-chatgpt-selection-message-id", "data-conversation-role", "hidden", "aria-hidden", "aria-modal", "open", "role"] });
+  observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["data-app-shell-active-page", "data-message-id", "data-message-author-role", "data-turn-id", "data-testid", "data-chatgpt-search-unit-key", "data-chatgpt-search-message-ids", "data-chatgpt-selection-message-id", "data-conversation-role", "hidden", "aria-hidden", "aria-modal", "open", "role"] });
   const routeTimer = setInterval(() => {
     if (location.pathname !== previousRoute) { previousRoute = location.pathname; update(); }
   }, 500);
@@ -149,7 +150,7 @@ function accessibleName(element: HTMLElement): string {
   return (element.getAttribute("aria-label") || element.innerText || element.textContent || "").trim().replace(/\s+/g, " ");
 }
 function available(element: HTMLElement): boolean {
-  return !element.matches(":disabled, [aria-disabled='true']") && !element.closest("[hidden], [aria-hidden='true']");
+  return !element.matches(":disabled, [aria-disabled='true']") && !element.closest("[data-app-shell-active-page='false'], [hidden], [aria-hidden='true']");
 }
 
 export async function findNativeBranchAction(answer: NativeAnswer, timeout = 1800): Promise<HTMLElement | null> {
@@ -162,6 +163,11 @@ export async function findNativeBranchAction(answer: NativeAnswer, timeout = 180
   const more = controls.find((button) => MORE_LABEL.test(accessibleName(button)));
   if (!more) return null;
   const previousMenus = new Set(document.querySelectorAll("[role='menu']"));
+  // Native menu triggers can open on pointerdown (e.g. Radix), while other
+  // versions use click. Dispatch the same sequence as a primary mouse click.
+  const PointerInput = window.PointerEvent ?? MouseEvent;
+  more.dispatchEvent(new PointerInput("pointerdown", { bubbles: true, composed: true, button: 0, buttons: 1, pointerType: "mouse", isPrimary: true }));
+  more.dispatchEvent(new PointerInput("pointerup", { bubbles: true, composed: true, button: 0, buttons: 0, pointerType: "mouse", isPrimary: true }));
   more.click();
   const find = () => {
     const controlledId = more.getAttribute("aria-controls");
