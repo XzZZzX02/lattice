@@ -3,6 +3,10 @@ import { BRANCHES_KEY, confirmBranch, mutatePresentation, presentationKey, readP
 import type { ExtensionPlatform, StorageArea } from "../src/platform";
 import type { BranchLink, ExtensionMessage, PendingBranch } from "../src/types";
 import nativeStyles from "../public/native.css?inline";
+import { createTreeCoordinator } from "../src/tree-background";
+import { collectChat } from "../src/host";
+import { projectMarkdown } from "../src/native-relay";
+import type { NativeReport, TreeMessage } from "../src/tree-types";
 
 history.replaceState(null, "", "/c/demo-main");
 const style = document.createElement("style");
@@ -16,15 +20,20 @@ const storage: StorageArea = {
   remove: async (keys) => { for (const key of typeof keys === "string" ? [keys] : keys) delete data[key]; sessionStorage.setItem("lattice-demo", JSON.stringify(data)); }
 };
 let pending: PendingBranch | null = null;
+const virtualTabs = new Map<number, NativeReport>();
+const virtualHistory = new Map<string, NativeReport>(JSON.parse(sessionStorage.getItem("lattice-demo-native-history") || "[]"));
+let nextTab = 10;
 const api: ExtensionPlatform = {
   storage: { local: storage, session: storage, onChanged: { addListener: (listener) => { listeners.add(listener); }, removeListener: (listener) => { listeners.delete(listener); } } },
   runtime: {
     onMessage: { addListener() {} },
     sendMessage: async (message: ExtensionMessage) => {
+      if (message.type.startsWith("tree:")) return treeCoordinator.handle(message as TreeMessage, 1);
       if (message.type === "presentation:mutate") {
         const key = presentationKey(message.key);
         const presentation = mutatePresentation(readPresentation(data[key]), message.mutation);
         await storage.set({ [key]: presentation });
+        if (message.mutation.type === "clear" || (message.mutation.type === "restore" && message.mutation.tree)) await treeCoordinator.replace(message.key, message.mutation.type === "restore" ? message.mutation.tree! : []);
         return { ok: true, presentation };
       }
       if (message.type === "branch:arm") {
@@ -45,8 +54,45 @@ const api: ExtensionPlatform = {
       return { ok: true };
     }
   },
-  tabs: { onCreated: { addListener() {} } }
+  tabs: {
+    onCreated: { addListener() {} },
+    create: async ({ url }) => {
+      const id = ++nextTab;
+      const clean = new URL(url).origin + new URL(url).pathname;
+      const saved = virtualHistory.get(clean);
+      const snapshot = collectChat(document, "https://chatgpt.com/c/demo-main");
+      virtualTabs.set(id, saved ? structuredClone(saved) : { url: clean, key: snapshot.conversationKey, title: snapshot.title, generating: false, composerReady: true, answers: snapshot.answers.map((answer) => ({ id: answer.id, question: answer.question, text: answer.text, markdown: projectMarkdown(answer.contentElement) })) });
+      setTimeout(() => void simulateNative(id), 250);
+      return { id };
+    },
+    get: async (id) => { if (!virtualTabs.has(id)) throw new Error("Demo tab closed"); return { id }; },
+    update: async (id) => ({ id })
+  }
 };
+const treeCoordinator = createTreeCoordinator(api);
+async function simulateNative(id: number) {
+  const report = virtualTabs.get(id);
+  if (!report) return;
+  const result = await treeCoordinator.handle({ type: "native:report", report }, id);
+  if (!result.ok || result.managed === false) return;
+  if (result.command) {
+    const command = result.command;
+    if (command.type === "fork") {
+      report.answers = report.answers.slice(0, report.answers.findIndex((turn) => turn.id === command.messageId) + 1);
+      const key = `demo-branch-${crypto.randomUUID()}`;
+      report.url = `https://chatgpt.com/c/${key}`;
+      report.key = `chatgpt:${key}`;
+      report.title = "本地模拟支线";
+    } else {
+      const text = `这是本地模拟回答，不是模型生成。\n\n本支线保留 ${report.answers.length} 条此前的回答。${report.answers.length > 1 ? `上一轮问题是：“${report.answers.at(-1)!.question.slice(-80)}”。` : "KV Cache 可理解为保留已有计算结果的书签，后续生成复用历史 Key/Value。"}\n\n你可以在卡片继续问、收起后再展开，或从本回答创建子支线；主线不会新增这些问题。`;
+      report.answers.push({ id: `message:${crypto.randomUUID()}`, question: command.text!, text, markdown: text });
+    }
+    virtualHistory.set(report.url, structuredClone(report));
+    sessionStorage.setItem("lattice-demo-native-history", JSON.stringify([...virtualHistory]));
+    await treeCoordinator.handle({ type: "native:ack", commandId: command.id }, id);
+  }
+  setTimeout(() => void simulateNative(id), 500);
+}
 Object.assign(globalThis, { chrome: api });
 mountLattice(() => `https://chatgpt.com${location.pathname}`);
 

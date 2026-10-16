@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Lattice for ChatGPT",
-  "version": "0.1.2",
-  "description": "用回答卡片、选区摘录和原生对话分支整理 ChatGPT。",
+  "version": "0.2.0",
+  "description": "主线不断、支线就地追问：可收起并保存上下文的树形 ChatGPT 对话。",
   "minimum_chrome_version": "120",
   "permissions": ["storage"],
   "background": { "service_worker": "background.js" },

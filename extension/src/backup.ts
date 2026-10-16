@@ -1,5 +1,7 @@
 import { connectedBranches, conversationKey, readPresentation } from "./presentation";
 import type { BranchLink, ChatSnapshot, Presentation } from "./types";
+import type { TreeCard } from "./tree-types";
+import { sanitizeTree } from "./tree-storage";
 
 export interface PresentationBackup {
   format: "lattice-chatgpt";
@@ -9,20 +11,21 @@ export interface PresentationBackup {
   title: string;
   presentation: Presentation;
   branches: BranchLink[];
+  tree?: TreeCard[];
 }
 
-export function createBackup(snapshot: ChatSnapshot, presentation: Presentation, branches: BranchLink[]): PresentationBackup {
+export function createBackup(snapshot: ChatSnapshot, presentation: Presentation, branches: BranchLink[], tree?: TreeCard[]): PresentationBackup {
   if (!snapshot.conversationKey) throw new Error("请在已保存的 ChatGPT 会话中导出整理。");
-  return { format: "lattice-chatgpt", version: 1, conversationKey: snapshot.conversationKey, sourceUrl: snapshot.url, title: snapshot.title, presentation, branches: connectedBranches(branches, snapshot.conversationKey) };
+  return { format: "lattice-chatgpt", version: 1, conversationKey: snapshot.conversationKey, sourceUrl: snapshot.url, title: snapshot.title, presentation, branches: connectedBranches(branches, snapshot.conversationKey), ...(tree ? { tree: sanitizeTree(tree, snapshot.conversationKey) } : {}) };
 }
 
-export function parseBackup(text: string, key: string | null): { presentation: Presentation; branches: BranchLink[] } {
+export function parseBackup(text: string, key: string | null): { presentation: Presentation; branches: BranchLink[]; tree?: TreeCard[] } {
   if (text.length > 4_000_000) throw new Error("整理文件过大，请选择小于 4 MB 的 JSON 文件。");
   let value: PresentationBackup;
   try { value = JSON.parse(text) as PresentationBackup; } catch { throw new Error("无法读取 JSON 整理文件。"); }
   if (!value || value.format !== "lattice-chatgpt" || value.version !== 1 || !value.presentation || value.presentation.version !== 1) throw new Error("这不是受支持的 Lattice 整理文件。");
   if (!key || value.conversationKey !== key || conversationKey(value.sourceUrl) !== key) throw new Error("请先打开此整理文件对应的 ChatGPT 原会话，再导入。");
-  return { presentation: readPresentation(value.presentation), branches: connectedBranches(sanitizeBranches(value.branches), key) };
+  return { presentation: readPresentation(value.presentation), branches: connectedBranches(sanitizeBranches(value.branches), key), ...(value.tree ? { tree: sanitizeTree(value.tree, key) } : {}) };
 }
 
 export function sanitizeBranches(value: unknown): BranchLink[] {
@@ -50,6 +53,10 @@ export function backupMarkdown(backup: PresentationBackup): string {
   }
   lines.push("", "## 会话分支", "");
   for (const branch of backup.branches) lines.push(`- [${branch.sourceTitle}](${branch.sourceUrl}) → [${branch.targetTitle}](${branch.targetUrl})`);
+  if (backup.tree?.length) {
+    lines.push("", "## 树形支线", "");
+    for (const card of backup.tree) lines.push(`- ${card.parentId ? "子支线：" : "支线："}${card.label}${card.targetUrl ? ` · [原生上下文](${card.targetUrl})` : " · 尚未发送"}`, ...(card.anchor ? [`  > ${card.anchor.text.replace(/\n/g, " ")}`] : []));
+  }
   return lines.join("\n");
 }
 

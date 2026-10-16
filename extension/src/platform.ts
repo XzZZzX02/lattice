@@ -6,7 +6,7 @@ export interface StorageArea {
   remove(keys: string | string[]): Promise<void>;
 }
 
-interface Tab { id?: number; openerTabId?: number }
+export interface Tab { id?: number; openerTabId?: number; active?: boolean }
 interface MessageSender { tab?: Tab; url?: string }
 type MessageListener = (message: ExtensionMessage, sender: MessageSender, respond: (value: ExtensionResponse) => void) => boolean | void;
 type StorageListener = (changes: Record<string, { newValue?: unknown; oldValue?: unknown }>, area: string) => void;
@@ -21,7 +21,12 @@ export interface ExtensionPlatform {
     session: StorageArea;
     onChanged: { addListener(listener: StorageListener): void; removeListener(listener: StorageListener): void };
   };
-  tabs: { onCreated: { addListener(listener: (tab: Tab) => void): void } };
+  tabs: {
+    onCreated: { addListener(listener: (tab: Tab) => void): void };
+    create?(properties: { url: string; active: boolean }): Promise<Tab>;
+    get?(id: number): Promise<Tab>;
+    update?(id: number, properties: { active?: boolean; autoDiscardable?: boolean }): Promise<Tab>;
+  };
 }
 
 export function platform(): ExtensionPlatform {

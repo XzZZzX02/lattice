@@ -124,3 +124,9 @@
 .lattice .link-branch input, .lattice .link-branch select { min-width: 0; width: 100%; padding: 7px; border: 1px solid var(--line); border-radius: 6px; color: var(--text); background: var(--bg); }
 @media (max-width: 640px) { .lattice .panel { top: 8px; right: 8px; bottom: 8px; max-width: calc(100vw - 16px); } .lattice .conversation-heading { padding-block: 14px; } }
 @media (prefers-reduced-motion: no-preference) { .lattice button, .lattice .answer-card { transition: background-color 140ms, border-color 140ms, color 140ms; } }
+.lattice .tree-intro { color: var(--soft); font-size: 12px; line-height: 1.9; margin-bottom: 16px; }
+.lattice .tree-outline { list-style: none; padding: 10px 0 0 8px; margin: 10px 0 0; border-left: 1px solid #426381; }
+.lattice .tree-outline ul { list-style: none; padding-left: 14px; }
+.lattice .tree-outline-link { display: flex; align-items: center; gap: 6px; padding: 7px 0; width: 100%; background: none; border: 0; color: var(--soft); text-align: left; font-size: 11px; }
+.lattice .tree-outline-link span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lattice .tree-outline-link small { color: var(--muted); font-size: 10px; white-space: nowrap; }

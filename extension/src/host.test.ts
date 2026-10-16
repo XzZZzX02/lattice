@@ -70,10 +70,16 @@ describe("ChatGPT DOM adapter", () => {
       const menu = document.createElement("div");
       menu.role = "menu";
       menu.innerHTML = '<button role="menuitem">创建对话分支</button>';
+      menu.firstElementChild!.addEventListener("click", () => {
+        const child = document.createElement("div");
+        child.role = "menu";
+        child.innerHTML = '<button role="menuitem">在工作模式中创建分支</button><button role="menuitem">在新聊天中创建分支</button>';
+        document.body.append(child);
+      });
       document.body.append(menu);
     });
     const action = await findNativeBranchAction(collectChat(document, href).answers[0]);
-    expect(action?.textContent).toBe("创建对话分支");
+    expect(action?.textContent).toBe("在新聊天中创建分支");
   });
 
   it("preserves native nodes, citations and event handlers across styling and streaming updates", () => {

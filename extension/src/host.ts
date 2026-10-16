@@ -24,9 +24,13 @@ function messageIdentity(element: HTMLElement): { id: string; stableId: boolean 
   return { id, stableId: false };
 }
 
-export function collectChat(documentRoot = document, href = location.href): ChatSnapshot {
+export function activeMain(documentRoot = document) {
   const activePage = documentRoot.querySelector("[data-app-shell-active-page='true']");
-  const main = activePage ? activePage.querySelector("main") : [...documentRoot.querySelectorAll("main")].find((element) => !element.closest("[data-app-shell-active-page='false'], [hidden], [aria-hidden='true']"));
+  return activePage ? activePage.querySelector("main") : [...documentRoot.querySelectorAll("main")].find((element) => !element.closest("[data-app-shell-active-page='false'], [hidden], [aria-hidden='true']"));
+}
+
+export function collectChat(documentRoot = document, href = location.href): ChatSnapshot {
+  const main = activeMain(documentRoot);
   const answers: NativeAnswer[] = [];
   let question = "";
   const seen = new Set<string>();
@@ -144,7 +148,8 @@ export function excerptRange(answer: NativeAnswer, excerpt: Excerpt): Range | nu
   return null;
 }
 
-const BRANCH_LABEL = /^(branch in (a )?new chat|创建(对话|聊天)分支|在新(聊天|对话)中(创建)?分支|新(聊天|对话)中的分支|分支(到|至)新(聊天|对话))$/i;
+const BRANCH_LABEL = /^(branch in (a )?new chat|在新(聊天|对话)中(创建)?分支|新(聊天|对话)中的分支|分支(到|至)新(聊天|对话))$/i;
+const BRANCH_SUBMENU = /^(创建(对话|聊天)分支|branch( conversation)?)$/i;
 const MORE_LABEL = /^(more( actions| options)?|更多(操作|选项)?)$/i;
 function accessibleName(element: HTMLElement): string {
   return (element.getAttribute("aria-label") || element.innerText || element.textContent || "").trim().replace(/\s+/g, " ");
@@ -169,11 +174,28 @@ export async function findNativeBranchAction(answer: NativeAnswer, timeout = 180
   more.dispatchEvent(new PointerInput("pointerdown", { bubbles: true, composed: true, button: 0, buttons: 1, pointerType: "mouse", isPrimary: true }));
   more.dispatchEvent(new PointerInput("pointerup", { bubbles: true, composed: true, button: 0, buttons: 0, pointerType: "mouse", isPrimary: true }));
   more.click();
+  let submenu: HTMLElement | undefined;
+  let submenuOpened = false;
+  let beforeSubmenus = new Set<Element>();
   const find = () => {
     const controlledId = more.getAttribute("aria-controls");
     const menus = [...document.querySelectorAll<HTMLElement>("[role='menu']")].filter((menu) => available(menu) && (controlledId ? menu.id === controlledId : !previousMenus.has(menu) || (!!more.id && menu.getAttribute("aria-labelledby") === more.id)));
-    if (menus.length !== 1) return null;
-    return [...menus[0].querySelectorAll<HTMLElement>("[role='menuitem'], button")].find((element) => BRANCH_LABEL.test(accessibleName(element)) && available(element)) ?? null;
+    if (!submenu && menus.length !== 1) return null;
+    const owned = submenu ? [...menus, ...[...document.querySelectorAll<HTMLElement>("[role='menu']")].filter((menu) => available(menu) && (!beforeSubmenus.has(menu) || menu.id === submenu?.getAttribute("aria-controls")))] : menus;
+    const items = owned.flatMap((menu) => [...menu.querySelectorAll<HTMLElement>("[role='menuitem'], button")]);
+    const action = items.find((element) => BRANCH_LABEL.test(accessibleName(element)) && available(element));
+    if (action) return action;
+    if (!submenuOpened) {
+      submenu = items.find((element) => BRANCH_SUBMENU.test(accessibleName(element)) && available(element));
+      if (submenu) {
+        submenuOpened = true;
+        beforeSubmenus = new Set(document.querySelectorAll("[role='menu']"));
+        submenu.focus();
+        submenu.click();
+        submenu.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", code: "ArrowRight", bubbles: true }));
+      }
+    }
+    return null;
   };
   const existing = find();
   if (existing) return existing;
@@ -181,6 +203,8 @@ export async function findNativeBranchAction(answer: NativeAnswer, timeout = 180
     const observer = new MutationObserver(() => { const action = find(); if (action) finish(action); });
     const timer = setTimeout(() => finish(null), timeout);
     function finish(value: HTMLElement | null) { observer.disconnect(); clearTimeout(timer); resolve(value); }
-    observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden", "aria-hidden"] });
+    observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["hidden", "aria-hidden", "data-state", "aria-expanded"] });
+    const action = find();
+    if (action) finish(action);
   });
 }

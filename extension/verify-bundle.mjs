@@ -56,6 +56,13 @@ async function verifyContent(content, html, answerSelector, question, actionId) 
   const citation = answer.querySelector("a");
   const composer = window.document.getElementById("native-composer");
   const nativeAction = window.document.getElementById(actionId);
+  const messageId = `message:${answer.getAttribute('data-message-id') || answer.getAttribute('data-chatgpt-selection-message-id')}`;
+  let card = { id: 'bundle-tree', rootKey: 'chatgpt:bundle-check', sourceKey: 'chatgpt:bundle-check', sourceUrl: window.location.href, sourceMessageId: messageId, label: 'Native context', collapsed: false, draft: '', createdAt: new Date().toISOString(), targetKey: 'chatgpt:bundle-branch', targetUrl: 'https://chatgpt.com/c/bundle-branch' };
+  window.chrome.runtime.sendMessage = async (message) => {
+    if (message.type === 'tree:read') return { ok: true, cards: [card], live: { [card.id]: { phase: 'ready', turns: [{ id: 'message:branch-answer', question: 'Explain this term', text: 'A native branch answer', markdown: 'A native [source](https://example.org/branch-source)' }], updatedAt: Date.now() } } };
+    if (message.type === 'tree:update') card = { ...card, ...(message.collapsed !== undefined ? { collapsed: message.collapsed } : {}) };
+    return { ok: true };
+  };
   let nativeClicks = 0;
   nativeAction.addEventListener("click", () => nativeClicks++);
   try {
@@ -65,6 +72,10 @@ async function verifyContent(content, html, answerSelector, question, actionId) 
     window.eval(content);
     const shadow = () => window.document.getElementById("lattice-chatgpt-extension")?.shadowRoot;
     await waitFor(() => shadow()?.querySelector("[aria-label='置顶回答 1']")?.disabled === false, errors);
+    const inline = () => window.document.querySelector('[data-lattice-tree-host]')?.shadowRoot;
+    await waitFor(() => inline()?.querySelector('.thread-answer'), errors);
+    assert.equal(inline().querySelector('.thread-answer a').href, 'https://example.org/branch-source');
+    assert.ok(inline().querySelector('.thread-question').textContent.includes('Explain this term'));
     assert.equal(shadow().querySelectorAll(".answer-card").length, 1);
     assert.ok(shadow().querySelector(".answer-card").textContent.includes(question));
     assert.equal(answer.parentElement, parent);
@@ -81,6 +92,13 @@ async function verifyContent(content, html, answerSelector, question, actionId) 
     shadow().querySelector("[aria-label='收起工作区']").click();
     await waitFor(() => window.document.documentElement.dataset.latticeOpen === "false", errors);
     assert.equal(answer.dataset.latticeActive, "false");
+    // The core conversation tree stays usable when the auxiliary workspace is closed.
+    inline().querySelector('.thread-toggle').click();
+    await waitFor(() => !inline().querySelector('.thread-answer'), errors);
+    inline().querySelector('.thread-toggle').click();
+    await waitFor(() => inline().querySelector('.thread-answer'), errors);
+    assert.equal(answer.innerHTML, nativeHtml);
+    assert.equal(window.document.getElementById('native-composer'), composer);
   } finally { window.close(); }
 }
 
@@ -104,5 +122,5 @@ export async function verifyExtensionBundle(directory) {
   });
   assert.equal(result.ok, true);
   assert.deepEqual([...result.presentation.favorites], ["message:answer-one"]);
-  console.log("Built extension startup verified without Node globals (legacy/current DOM, workspace, graphs, native controls, service worker).");
+  console.log("Built extension verified without Node globals (legacy/current DOM, inline context tree, collapse/reopen, graphs, native controls, service worker).");
 }

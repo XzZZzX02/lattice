@@ -30,6 +30,11 @@ The optional Chrome/Edge extension keeps ChatGPT's native conversation, composer
 citations, files, tools, and conversation branches, and adds Lattice presentation
 and organization. It has no model backend or API-key configuration.
 
+Version 0.2 centers on an inline conversation tree: select a term, continue a
+native ChatGPT branch inside a collapsible card, and grow nested branches while
+keeping the main conversation in place. Excerpts, notes and mind maps remain
+available in the workspace.
+
 ```bash
 pnpm extension:build
 ```

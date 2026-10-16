@@ -3,8 +3,12 @@ import { BRANCHES_KEY, BRANCH_TTL, confirmBranch, conversationKey, mutatePresent
 import type { BranchLink, ExtensionMessage, ExtensionResponse, PendingBranch } from "./types";
 import { sanitizeBranches } from "./backup";
 import { connectedBranches } from "./presentation";
+import { createTreeCoordinator } from "./tree-background";
+import type { TreeMessage } from "./tree-types";
+import { sanitizeTree } from "./tree-storage";
 
 const api = platform();
+const tree = createTreeCoordinator(api);
 let queue: Promise<unknown> = Promise.resolve();
 function serialize<T>(work: () => Promise<T>): Promise<T> {
   const next = queue.then(work, work);
@@ -15,6 +19,7 @@ function serialize<T>(work: () => Promise<T>): Promise<T> {
 api.tabs.onCreated.addListener((tab) => {
   if (tab.id === undefined || tab.openerTabId === undefined) return;
   void serialize(async () => {
+    await tree.created(tab);
     const key = `lattice:pending:${tab.openerTabId}`;
     const pending = (await api.storage.session.get(key))[key] as PendingBranch | undefined;
     if (pending && Date.now() - pending.createdAt <= BRANCH_TTL) await api.storage.session.set({ [`lattice:opener:${tab.id}`]: tab.openerTabId });
@@ -29,6 +34,7 @@ api.runtime.onMessage.addListener((message, sender, respond) => {
 });
 
 async function handleMessage(message: ExtensionMessage, tabId: number, senderUrl: string): Promise<ExtensionResponse> {
+  if (message.type.startsWith("tree:") || message.type.startsWith("native:")) return tree.handle(message as TreeMessage, tabId);
   if (message.type === "branch:link") {
     const targetKey = conversationKey(message.targetUrl);
     if (conversationKey(senderUrl) !== message.sourceKey || conversationKey(message.sourceUrl) !== message.sourceKey || !targetKey || targetKey === message.sourceKey) return { ok: false, error: "请填写另一个 ChatGPT 原生会话的地址。" };
@@ -44,12 +50,18 @@ async function handleMessage(message: ExtensionMessage, tabId: number, senderUrl
     return { ok: true };
   }
   if (message.type === "presentation:mutate") {
-    if (conversationKey(senderUrl) !== message.key) return { ok: false, error: "会话已切换，请重试。" };
+    // Chrome can retain the injection document URL in MessageSender across SPA
+    // navigation. Our isolated content script includes its current page URL.
+    if (conversationKey(message.pageUrl ?? senderUrl) !== message.key) return { ok: false, error: "会话已切换，请重试。" };
     const key = presentationKey(message.key);
     const saved = await api.storage.local.get(key);
     const presentation = mutatePresentation(readPresentation(saved[key]), message.mutation);
     if (message.mutation.type === "clear") await api.storage.local.remove(key);
     else await api.storage.local.set({ [key]: presentation });
+    if (message.mutation.type === "clear" || (message.mutation.type === "restore" && message.mutation.tree)) {
+      const restored = message.mutation.type === "restore" ? sanitizeTree(message.mutation.tree, message.key) : [];
+      await tree.replace(message.key, restored);
+    }
     if (message.mutation.type === "restore" && message.mutation.branches) {
       const restored = connectedBranches(sanitizeBranches(message.mutation.branches), message.key);
       const existing = sanitizeBranches((await api.storage.local.get(BRANCHES_KEY))[BRANCHES_KEY]);
@@ -74,7 +86,7 @@ async function handleMessage(message: ExtensionMessage, tabId: number, senderUrl
     return { ok: true };
   }
   if (message.type === "conversation:ready") {
-    if (conversationKey(message.url) !== message.key || conversationKey(senderUrl) !== message.key) return { ok: false, error: "无效的 ChatGPT 会话。" };
+    if (conversationKey(message.url) !== message.key) return { ok: false, error: "无效的 ChatGPT 会话。" };
     const openerKey = `lattice:opener:${tabId}`;
     const opener = (await api.storage.session.get(openerKey))[openerKey];
     const sources = [...new Set([tabId, ...(typeof opener === "number" ? [opener] : [])])];

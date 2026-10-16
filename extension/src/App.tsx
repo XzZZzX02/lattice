@@ -6,7 +6,9 @@ import { BranchMap } from "./BranchMap";
 import { MindMap } from "./MindMap";
 import { DataControls } from "./DataControls";
 import { linkExcerptHighlights } from "./highlights";
-import { collectChat, decorateAnswers, excerptRange, findNativeBranchAction, getAnswerSelection, jumpToAnswer, observeChat } from "./host";
+import { collectChat, decorateAnswers, excerptRange, getAnswerSelection, jumpToAnswer, observeChat } from "./host";
+import { InlineConversationTree, TreeOutline } from "./ConversationTree";
+import { useConversationTree } from "./useConversationTree";
 import { platform, request } from "./platform";
 import { BRANCHES_KEY, emptyPresentation, mutatePresentation, presentationKey, readPresentation } from "./presentation";
 import type { BranchLink, Excerpt, NativeAnswer, PresentationMutation } from "./types";
@@ -16,6 +18,7 @@ const liveHref = () => location.href;
 
 export function LatticeApp({ getHref = liveHref }: { getHref?: () => string }) {
   const [snapshot, setSnapshot] = useState(() => collectChat(document, getHref()));
+  const tree = useConversationTree(snapshot);
   const [presentation, setPresentation] = useState(emptyPresentation);
   const [links, setLinks] = useState<BranchLink[]>([]);
   const [open, setOpen] = useState(true);
@@ -108,13 +111,13 @@ export function LatticeApp({ getHref = liveHref }: { getHref?: () => string }) {
       if (!snapshot.conversationKey) {
         setPresentation((state) => mutatePresentation(state, mutation));
       } else {
-        const response = await request({ type: "presentation:mutate", key: snapshot.conversationKey, mutation });
+        const response = await request({ type: "presentation:mutate", key: snapshot.conversationKey, pageUrl: snapshot.url, mutation });
         if (snapshot.route === currentRoute.current && response.presentation) setPresentation(response.presentation);
       }
       setError("");
       return true;
     } catch (cause) { setError(errorText(cause)); return false; }
-  }, [loadedRoute, snapshot.route, snapshot.conversationKey]);
+  }, [loadedRoute, snapshot.route, snapshot.conversationKey, snapshot.url]);
 
   function selectAnswer(answer: NativeAnswer) { setActiveId(answer.id); setWide(false); jumpToAnswer(answer); }
 
@@ -122,23 +125,9 @@ export function LatticeApp({ getHref = liveHref }: { getHref?: () => string }) {
     if (branching || !snapshot.conversationKey || !answer.stableId) return;
     setBranching(true);
     setSelection(null);
-    let token: string | undefined;
-    const route = snapshot.route;
     try {
-      const action = await findNativeBranchAction(answer);
-      if (currentRoute.current !== route) return;
-      if (!action) {
-        setToast("未识别到原生分支按钮。请在这条回答的“更多”菜单中选择分支；本次不会自动关联会话。");
-        return;
-      }
-      const result = await request({ type: "branch:arm", key: snapshot.conversationKey, url: snapshot.url, messageId: answer.id, title: presentation.titles[answer.id] || answer.question || snapshot.title, excerpt });
-      token = result.token;
-      if (currentRoute.current !== route || !action.isConnected) throw new Error("页面已变化，请重新选择分支起点。");
-      action.click();
-      setToast("已触发 ChatGPT 原生分支。新会话打开后会记录到分支图。");
-    } catch (cause) {
-      if (token) await request({ type: "branch:cancel", token }).catch(() => undefined);
-      setError(errorText(cause));
+      const id = await tree.create(answer, excerpt);
+      if (id) { window.getSelection()?.removeAllRanges(); jumpToAnswer(answer); setToast("支线卡片已在原回答下展开。首次发送时创建原生分支。"); }
     } finally { setBranching(false); }
   }
 
@@ -154,7 +143,6 @@ export function LatticeApp({ getHref = liveHref }: { getHref?: () => string }) {
   async function branchSelection() {
     if (!selection || !selection.answer.stableId || selection.route !== snapshot.route) return;
     const excerpt: Excerpt = { id: crypto.randomUUID(), messageId: selection.answer.id, text: selection.text, startOffset: selection.renderedStartOffset, endOffset: selection.renderedEndOffset, note: "", createdAt: new Date().toISOString() };
-    if (!await mutate({ type: "excerpt:add", excerpt })) return;
     await branch(selection.answer, excerpt);
   }
 
@@ -201,33 +189,36 @@ export function LatticeApp({ getHref = liveHref }: { getHref?: () => string }) {
   if (floating && selection && selection.anchor.bottom + 52 < innerHeight) floating.top = selection.anchor.bottom + 8;
 
   return <div className="lattice">
+    <InlineConversationTree snapshot={snapshot} tree={tree} hidden={!!snapshot.nativeOverlay} />
     {!snapshot.nativeOverlay && <button className={`launcher ${open ? "is-open" : ""}`} ref={launcher} onClick={() => { setOpen(!open); if (!open) setTimeout(() => searchInput.current?.focus(), 0); }} aria-label={open ? "收起 Lattice" : "打开 Lattice"} aria-expanded={open} type="button"><LatticeLogo /><span>Lattice</span><ChevronRight size={14} /></button>}
     {open && <aside className={`panel ${wide ? "wide" : ""}`} style={{ display: workspaceVisible ? undefined : "none" }} aria-label="Lattice 对话工作区" onKeyDown={(event) => { if (event.key === "Escape") { setOpen(false); launcher.current?.focus(); } }}>
       <header className="panel-header"><div className="brand"><LatticeLogo /><strong>Lattice</strong><span>for ChatGPT</span></div><div><button className="icon-button" aria-label={wide ? "收窄工作区" : "展开工作区"} onClick={() => setWide(!wide)}>{wide ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button><button className="icon-button" onClick={() => { setOpen(false); launcher.current?.focus(); }} title="收起工作区" aria-label="收起工作区"><PanelRightClose size={17} /></button></div></header>
       <div className="conversation-heading"><span className="connection"><CheckCheck size={13} />ChatGPT 原生对话</span><h1 title={snapshot.title}>{snapshot.title === "ChatGPT" ? snapshot.answers[0]?.question || "从一个问题开始" : snapshot.title}</h1><p>{snapshot.answers.length} 条回答<span>·</span>问答、引用与工具由 ChatGPT 处理</p></div>
-      <nav className="tabs" aria-label="工作区视图">{([{ id: "answers", label: "回答", Icon: LayoutList }, { id: "branches", label: "分支", Icon: Network }, { id: "excerpts", label: "摘录", Icon: Quote }, { id: "mindmap", label: "思维图", Icon: BrainCircuit }] as const).map(({ id, label, Icon }) => <button key={id} onClick={() => setView(id)} aria-current={view === id ? "page" : undefined}><Icon size={15} />{label}{id === "excerpts" && presentation.excerpts.length > 0 && <span>{presentation.excerpts.length}</span>}</button>)}</nav>
-      {error && <div className="error" role="alert">{error}<button className="icon-button" aria-label="关闭错误提示" onClick={() => setError("")}><X size={14} /></button></div>}
+      <nav className="tabs" aria-label="工作区视图">{([{ id: "answers", label: "对话树", Icon: LayoutList }, { id: "branches", label: "分支", Icon: Network }, { id: "excerpts", label: "摘录", Icon: Quote }, { id: "mindmap", label: "思维图", Icon: BrainCircuit }] as const).map(({ id, label, Icon }) => <button key={id} onClick={() => setView(id)} aria-current={view === id ? "page" : undefined}><Icon size={15} />{label}{id === "excerpts" && presentation.excerpts.length > 0 && <span>{presentation.excerpts.length}</span>}</button>)}</nav>
+      {(error || tree.error) && <div className="error" role="alert">{error || tree.error}<button className="icon-button" aria-label="关闭错误提示" onClick={() => { setError(""); tree.clearError(); }}><X size={14} /></button></div>}
       {!snapshot.conversationKey && <p className="session-notice">此页面尚无已保存的会话地址，整理仅保留在当前页面。</p>}
       <div className="panel-body">
         {incomingBranch?.excerpt && <section className="branch-context"><span><GitBranch size={13} />这条分支的探索线索</span><blockquote>{incomingBranch.excerpt.text}</blockquote><div className="card-footer"><a href={incomingBranch.sourceUrl}>返回分支起点<ArrowUpRight size={12} /></a><button className="text-button" onClick={() => void copy(incomingBranch.excerpt!.text)}>复制摘录<Copy size={12} /></button></div></section>}
         {view === "answers" && <>
+          <p className="tree-intro">主线保持连续。选中回答中的名词，就地展开可收起、可继续追问的支线。</p>
           <div className="answer-tools"><label className="search"><Search size={15} /><input ref={searchInput} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="查找问题与回答" aria-label="查找问题与回答" />{query && <button aria-label="清除搜索" onClick={() => setQuery("")}><X size={13} /></button>}</label><button className={`view-toggle ${presentation.cardView ? "enabled" : ""}`} aria-pressed={presentation.cardView} title="切换原文的卡片排版" disabled={!ready} onClick={() => void mutate({ type: "cardView", enabled: !presentation.cardView })}><LayoutList size={15} /></button></div>
           <div className="answer-list">{!answers.length ? <div className="empty-state"><MessageSquare size={28} /><h2>{query ? "没有匹配的回答" : "让对话在这里展开"}</h2><p>{query ? "试试问题中的另一个关键词。" : "在 ChatGPT 中正常提问。回答出现后，这里会自动生成导航卡片。"}</p></div> : answers.map(({ answer, index }) => <article key={answer.id} className={`answer-card ${activeId === answer.id ? "active" : ""}`}>
             <div className="card-meta"><span>回答 {String(index + 1).padStart(2, "0")}</span><div><button className={`icon-button ${presentation.favorites.includes(answer.id) ? "starred" : ""}`} aria-label={`${presentation.favorites.includes(answer.id) ? "取消置顶" : "置顶"}回答 ${index + 1}`} disabled={!ready || !answer.stableId} onClick={() => void mutate({ type: "favorite", messageId: answer.id, favorite: !presentation.favorites.includes(answer.id) })}><Star size={14} fill={presentation.favorites.includes(answer.id) ? "currentColor" : "none"} /></button><button className="icon-button" aria-label={`重命名回答 ${index + 1} 的卡片`} disabled={!ready || !answer.stableId} onClick={() => setEditing(answer.id)}><Pencil size={13} /></button></div></div>
             {editing === answer.id ? <form className="rename-form" onSubmit={(event) => { event.preventDefault(); const form = new FormData(event.currentTarget); void mutate({ type: "title", messageId: answer.id, title: String(form.get("title") ?? "") }); setEditing(null); }}><input name="title" aria-label="卡片标题" defaultValue={presentation.titles[answer.id] || answer.question} maxLength={160} autoFocus /><button className="icon-button" aria-label="保存卡片标题"><Check size={15} /></button><button className="icon-button" type="button" aria-label="取消重命名" onClick={() => setEditing(null)}><X size={15} /></button></form> : <button className="answer-link" onClick={() => selectAnswer(answer)}><h2>{presentation.titles[answer.id] || answer.question || `回答 ${index + 1}`}</h2><p>{answer.text.slice(0, 170) || "ChatGPT 正在生成回答…"}</p></button>}
-            <div className="card-footer"><button className="text-button" onClick={() => selectAnswer(answer)}>定位原文<ArrowUpRight size={13} /></button><button className="branch-button" disabled={branching || !snapshot.conversationKey || !answer.stableId} onClick={() => void branch(answer)} title="使用 ChatGPT 原生分支继承截至此回答的对话上下文"><GitBranch size={13} />从这里分支</button></div>
+            <div className="card-footer"><button className="text-button" onClick={() => selectAnswer(answer)}>定位原文<ArrowUpRight size={13} /></button><button className="branch-button" disabled={branching || !snapshot.conversationKey || !answer.stableId} onClick={() => void branch(answer)} title="在原回答下展开可连续追问的支线，首次发送时创建原生分支"><GitBranch size={13} />就地追问</button></div>
+            <TreeOutline tree={tree} messageId={answer.id} />
             {!answer.stableId && <p className="card-notice">此回答缺少稳定标识，暂时仅支持定位。</p>}
           </article>)}</div>
-          {snapshot.answers.length > 0 && <p className="tip">选中原文中的一段话，可将它摘录成卡片。</p>}
+          {snapshot.answers.length > 0 && <p className="tip">选中原文里的专业名词，展开支线追问；也可以保存摘录。</p>}
         </>}
         {view === "branches" && <BranchMap snapshot={snapshot} links={links} />}
         {view === "mindmap" && <MindMap presentation={presentation} mutate={mutate} locate={locateConcept} />}
         {view === "excerpts" && <div className="excerpts-view"><div className="section-intro"><Quote size={20} /><h2>留住值得继续的片段</h2><p>摘录和笔记保存在这个浏览器中。点击原文里的蓝色高亮，可再次打开关联卡片。</p></div>{!presentation.excerpts.length ? <div className="empty-state"><Quote size={28} /><p>在 ChatGPT 的回答中选中文字，点击“摘录成卡片”。</p></div> : presentation.excerpts.map((excerpt) => <article className="excerpt-card" key={excerpt.id}><blockquote>{excerpt.text}</blockquote><textarea key={`${excerpt.id}:${excerpt.note}`} aria-label="摘录笔记" placeholder="写下你的想法…" defaultValue={excerpt.note} rows={2} onBlur={(event) => { if (event.target.value !== excerpt.note) void mutate({ type: "excerpt:add", excerpt: { ...excerpt, note: event.target.value } }); }} /><button className="concept-button" disabled={!ready} onClick={() => void addConcept(excerpt)}><BrainCircuit size={13} />{presentation.mindNodes.some((node) => node.excerptId === excerpt.id) ? "查看思维图" : "加入思维图"}</button><div className="card-footer"><button className="text-button" onClick={() => locateExcerpt(excerpt)}>回到原文<ArrowUpRight size={13} /></button><div><button className="icon-button" aria-label="复制摘录" onClick={() => void copy(excerpt.text)}><Copy size={14} /></button><button className="icon-button" disabled={!ready} aria-label="删除本地摘录" onClick={() => void mutate({ type: "excerpt:remove", id: excerpt.id })}><Trash2 size={14} /></button></div></div></article>)}</div>}
       </div>
-      <footer className="panel-footer">{clearPending ? <div className="clear-confirm"><span>清空本会话的本地卡片整理、摘录与思维图？</span><button onClick={() => { void mutate({ type: "clear" }); setClearPending(false); }}>清空</button><button onClick={() => setClearPending(false)}>取消</button></div> : <><span>整理保存在本机</span><div className="footer-actions"><DataControls key={snapshot.route} snapshot={snapshot} presentation={presentation} links={links} mutate={mutate} report={setToast} ready={ready} /><button disabled={!ready} onClick={() => setClearPending(true)}>清空整理</button></div></>}</footer>
+      <footer className="panel-footer">{clearPending ? <div className="clear-confirm"><span>清空本会话的本地对话树、摘录与思维图？原生会话保留。</span><button onClick={() => { void mutate({ type: "clear" }); setClearPending(false); }}>清空</button><button onClick={() => setClearPending(false)}>取消</button></div> : <><span>整理保存在本机</span><div className="footer-actions"><DataControls key={snapshot.route} snapshot={snapshot} presentation={presentation} links={links} cards={tree.cards} mutate={mutate} report={setToast} ready={ready} /><button disabled={!ready} onClick={() => setClearPending(true)}>清空整理</button></div></>}</footer>
     </aside>}
-    {workspaceVisible && selection && floating && <div className="selection-toolbar" style={floating} role="toolbar" aria-label="选区操作"><button disabled={!selection.answer.stableId || !ready} onPointerDown={(event) => event.preventDefault()} onClick={() => void saveSelection()}><Quote size={14} />摘录成卡片</button><button disabled={branching || !selection.answer.stableId || !snapshot.conversationKey} onPointerDown={(event) => event.preventDefault()} onClick={() => void branchSelection()}><GitBranch size={14} />从回答分支</button></div>}
-    {workspaceVisible && !selection && previewExcerpt && previewPosition && <section className="linked-preview" style={previewPosition} aria-label="关联摘录卡片"><header><span><Quote size={14} />关联摘录</span><button className="icon-button" aria-label="关闭关联卡片" onClick={() => setLinkedExcerpt(null)}><X size={14} /></button></header><blockquote>{previewExcerpt.text}</blockquote>{previewExcerpt.note && <p>{previewExcerpt.note}</p>}<div className="card-footer"><button className="text-button" onClick={() => { setView("excerpts"); setLinkedExcerpt(null); }}>打开摘录<ArrowUpRight size={13} /></button><button className="branch-button" disabled={branching || !snapshot.conversationKey} onClick={() => { const answer = snapshot.answers.find((item) => item.id === previewExcerpt.messageId); if (answer) void branch(answer, previewExcerpt); setLinkedExcerpt(null); }}><GitBranch size={13} />从来源分支</button></div></section>}
+    {!snapshot.nativeOverlay && selection && floating && <div className="selection-toolbar" style={floating} role="toolbar" aria-label="选区操作"><button disabled={!selection.answer.stableId || !ready} onPointerDown={(event) => event.preventDefault()} onClick={() => void saveSelection()}><Quote size={14} />摘录成卡片</button><button disabled={branching || !selection.answer.stableId || !snapshot.conversationKey} onPointerDown={(event) => event.preventDefault()} onClick={() => void branchSelection()}><GitBranch size={14} />支线追问</button></div>}
+    {workspaceVisible && !selection && previewExcerpt && previewPosition && <section className="linked-preview" style={previewPosition} aria-label="关联摘录卡片"><header><span><Quote size={14} />关联摘录</span><button className="icon-button" aria-label="关闭关联卡片" onClick={() => setLinkedExcerpt(null)}><X size={14} /></button></header><blockquote>{previewExcerpt.text}</blockquote>{previewExcerpt.note && <p>{previewExcerpt.note}</p>}<div className="card-footer"><button className="text-button" onClick={() => { setView("excerpts"); setLinkedExcerpt(null); }}>打开摘录<ArrowUpRight size={13} /></button><button className="branch-button" disabled={branching || !snapshot.conversationKey} onClick={() => { const answer = snapshot.answers.find((item) => item.id === previewExcerpt.messageId); if (answer) void branch(answer, previewExcerpt); setLinkedExcerpt(null); }}><GitBranch size={13} />展开支线</button></div></section>}
     {toast && !snapshot.nativeOverlay && <div className="toast" role="status">{toast}</div>}
   </div>;
 }

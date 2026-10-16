@@ -1,4 +1,5 @@
 /* Keep the original message nodes, native event handlers, and tool surfaces. */
+html[data-lattice-worker="true"] :is(#lattice-chatgpt-extension, [data-lattice-tree-host]) { display: none !important; }
 ::highlight(lattice-excerpt) { background-color: #71b7ff55; color: inherit; }
 ::highlight(lattice-linked-excerpts) { background-color: #71b7ff25; text-decoration: underline; color: inherit; }
 html[data-lattice-cards="true"] [data-lattice-answer] {

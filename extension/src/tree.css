@@ -1,0 +1,29 @@
+:host { all: initial; display: block; position: relative; z-index: auto; }
+.inline-tree { margin: 14px 0 22px; color-scheme: light dark; --tree-bg: light-dark(#fafbfc,#121924); --tree-text: light-dark(#202935,#edf2f8); --tree-muted: light-dark(#667386,#98a8ba); --tree-line: light-dark(#d6dee8,#344357); --tree-accent: light-dark(#246ca3,#89c5f3); color: var(--tree-text); }
+.thread-card { border: 1px solid var(--tree-line); border-left: 3px solid var(--tree-accent); border-radius: 9px; background: var(--tree-bg); margin-block: 10px; overflow: hidden; }
+.thread-header { display: flex; gap: 8px; align-items: center; padding: 7px 10px; }
+.thread-toggle { flex: 1; min-width: 0; display: flex; gap: 8px; align-items: center; background: none; border: 0; padding: 5px 0; text-align: left; }
+.thread-toggle strong { flex: 1; font-weight: 550; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-toggle > span { font-size: 11px; white-space: nowrap; color: var(--tree-muted); }
+.thread-toggle svg { flex-shrink: 0; color: var(--tree-accent); }
+.thread-content { border-top: 1px solid var(--tree-line); padding: 16px 18px 12px; }
+.lattice .thread-anchor { border-left: 2px solid var(--tree-line); padding-left: 10px; margin-bottom: 12px; font-size: 12px; color: var(--tree-muted); max-height: 100px; overflow: auto; white-space: pre-wrap; }
+.lattice .thread-hint, .lattice .thread-status { font-size: 12px; color: var(--tree-muted); margin-block: 10px; }
+.lattice .thread-status.is-error { color: light-dark(#a53f23,#ffb2a0); }
+.thread-turn { padding-block: 12px; border-bottom: 1px solid var(--tree-line); }
+.lattice .thread-question, .lattice .thread-pending { color: var(--tree-accent); font-size: 13px; font-weight: 550; white-space: pre-wrap; margin-bottom: 10px; }
+.thread-answer { color: var(--tree-text); font-size: 14px; line-height: 1.85; overflow-wrap: anywhere; }
+.lattice .thread-answer p { margin-block: 8px; }
+.thread-answer h1,.thread-answer h2,.thread-answer h3 { font-size: 15px; margin-block: 12px 6px; }
+.thread-answer ul,.thread-answer ol { padding-left: 22px; }
+.thread-answer pre { white-space: pre; overflow: auto; padding: 12px; background: light-dark(#edf1f6,#080d14); border-radius: 6px; }
+.lattice .thread-answer a { color: var(--tree-accent); text-decoration: underline; }
+.thread-answer table { display: block; overflow-x: auto; border-collapse: collapse; }
+.thread-answer td,.thread-answer th { border: 1px solid var(--tree-line); padding: 5px 8px; }
+.thread-child-button { display: inline-flex; gap: 5px; align-items: center; background: none; border: 0; color: var(--tree-accent) !important; padding: 8px 0; font-size: 11px !important; }
+.thread-turn > .thread-card { margin-left: 12px; }
+.thread-composer { display: flex; gap: 8px; align-items: flex-end; padding: 10px; border: 1px solid var(--tree-line); border-radius: 8px; background: light-dark(#fff,#0c121a); }
+.thread-composer textarea { min-width: 0; width: 100%; resize: vertical; min-height: 44px; max-height: 180px; border: 0; background: transparent; color: var(--tree-text); outline: none; line-height: 1.7; font-size: 13px; }
+.thread-send { display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 6px; background: var(--tree-accent); color: light-dark(#fff,#102236) !important; padding: 8px 10px; font-size: 12px !important; white-space: nowrap; }
+.lattice .thread-native-note { font-size: 10px; color: var(--tree-muted); padding-top: 8px; }
+@media(max-width: 640px) { .thread-content { padding: 12px; } .thread-turn > .thread-card { margin-left: 4px; } }

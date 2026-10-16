@@ -71,18 +71,18 @@ export type PresentationMutation =
   | { type: "mind:remove"; id: string }
   | { type: "mind:connect"; edge: MindEdge }
   | { type: "mind:disconnect"; id: string }
-  | { type: "restore"; presentation: Presentation; branches?: BranchLink[] }
+  | { type: "restore"; presentation: Presentation; branches?: BranchLink[]; tree?: import("./tree-types").TreeCard[] }
   | { type: "clear" };
 
-export type ExtensionMessage =
-  | { type: "presentation:mutate"; key: string; mutation: PresentationMutation }
+export type ExtensionMessage = import("./tree-types").TreeMessage
+  | { type: "presentation:mutate"; key: string; mutation: PresentationMutation; pageUrl?: string }
   | { type: "conversation:ready"; key: string; url: string; title: string }
   | { type: "branch:arm"; key: string; url: string; messageId: string; title: string; excerpt?: Excerpt }
   | { type: "branch:cancel"; token: string }
   | { type: "branch:link"; sourceKey: string; sourceUrl: string; sourceMessageId: string; sourceTitle: string; targetUrl: string; targetTitle: string };
 
 export type ExtensionResponse =
-  | { ok: true; presentation?: Presentation; token?: string }
+  | ({ ok: true; presentation?: Presentation; token?: string } & import("./tree-types").TreeResult)
   | { ok: false; error: string };
 
 export interface PendingBranch {

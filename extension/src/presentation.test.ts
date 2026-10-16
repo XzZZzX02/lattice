@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { BRANCH_TTL, confirmBranch, connectedBranches, conversationKey, emptyPresentation, mutatePresentation } from "./presentation";
 import { backupMarkdown, createBackup, parseBackup } from "./backup";
 import type { BranchLink, ChatSnapshot, PendingBranch } from "./types";
+import type { TreeCard } from "./tree-types";
 
 const now = Date.now();
 const pending: PendingBranch = { token: "t", sourceTabId: 1, sourceKey: "chatgpt:source", sourceUrl: "https://chatgpt.com/c/source", sourceMessageId: "message:a", sourceTitle: "Source question", createdAt: now };
@@ -53,5 +54,12 @@ describe("presentation metadata", () => {
     expect(restored.presentation.excerpts).toEqual([]);
     backup.branches = [{ ...link, targetKey: null, targetUrl: "javascript:alert(1)" }] as unknown as BranchLink[];
     expect(parseBackup(JSON.stringify(backup), snapshot.conversationKey).branches).toEqual([]);
+  });
+  it("round trips a nested tree with drafts and real context addresses", () => {
+    const parent: TreeCard = { id: "p", rootKey: pending.sourceKey, sourceKey: pending.sourceKey, sourceUrl: pending.sourceUrl, sourceMessageId: "message:a", label: "Term", draft: "Follow up", collapsed: true, createdAt: "today", targetKey: link.targetKey, targetUrl: link.targetUrl, inheritedTurns: 1 };
+    const child: TreeCard = { ...parent, id: "c", parentId: parent.id, sourceKey: link.targetKey, sourceUrl: link.targetUrl, sourceMessageId: "message:b", targetKey: "chatgpt:grandchild", targetUrl: "https://chatgpt.com/c/grandchild" };
+    const backup = createBackup(snapshot, emptyPresentation(), [link], [parent, child]);
+    expect(parseBackup(JSON.stringify(backup), pending.sourceKey).tree).toEqual([parent, child]);
+    expect(backupMarkdown(backup)).toContain("https://chatgpt.com/c/grandchild");
   });
 });
