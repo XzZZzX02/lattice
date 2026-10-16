@@ -45,14 +45,14 @@ export function BranchMap({ snapshot, links }: { snapshot: ChatSnapshot; links: 
   }, [connected, snapshot]);
 
   return <div className="branch-view">
-    <div className="section-intro"><GitBranch size={20} /><h2>每条分支，一段独立对话</h2><p>在回答卡片上创建原生分支。ChatGPT 决定分支上下文，Lattice 记录它们的关系。</p></div>
+    <div className="section-intro"><GitBranch size={20} /><h2>会话图</h2><p>{graph.nodes.length} 个会话 · {connected.length} 次分叉</p></div>
     <div className="branch-map" aria-label="原生会话分支图">
       <ReactFlow key={snapshot.conversationKey ?? snapshot.route} nodes={graph.nodes} edges={graph.edges} fitView minZoom={0.2} maxZoom={1.3} nodesDraggable={false} nodesConnectable={false} elementsSelectable={false} proOptions={{ hideAttribution: true }}>
         <Background color="#2a3646" gap={20} />
         <Controls showInteractive={false} />
       </ReactFlow>
     </div>
-    <div className="branch-list">{connected.length === 0 ? <p className="empty-caption">还没有记录分支。回到“回答”，从任意回答继续探索。</p> : connected.map((link) => <div className="branch-record" key={link.targetKey}>
+    <div className="branch-list">{connected.length === 0 ? <p className="empty-caption">尚无会话分叉记录。</p> : connected.map((link) => <div className="branch-record" key={link.targetKey}>
       <span>{link.manual ? "已手动关联的原生分支" : "通过 Lattice 创建的原生分支"}</span>
       <p>{link.sourceTitle}</p>
       <a href={link.targetUrl}>{link.targetTitle || "打开分支会话"}<ExternalLink size={13} /></a>

@@ -176,11 +176,3 @@ export function FloatingConversationTree({ snapshot, tree, hidden }: { snapshot:
 
   return <><style>{treeStyles}</style>{card && !hidden && <section ref={surface} className="floating-tree" data-lattice-tree-host="" role="dialog" aria-modal="false" aria-label={`悬浮支线：${card.label}`} tabIndex={-1} style={position}><ThreadCard key={card.id} card={card} tree={tree} /></section>}</>;
 }
-
-export function TreeOutline({ tree, messageId }: { tree: TreeActions; messageId: string }) {
-  const roots = tree.cards.filter((card) => !card.parentId && card.sourceMessageId === messageId);
-  function item(card: TreeCard): React.ReactNode {
-    return <li key={card.id}><button className="tree-outline-link" onClick={() => void tree.focus(card)}><GitBranch size={12} /><span>{card.label}</span><small>{tree.focusTarget?.id === card.id ? "查看中" : "已收起"}</small></button><ul>{tree.cards.filter((child) => child.parentId === card.id).map(item)}</ul></li>;
-  }
-  return roots.length ? <ul className="tree-outline">{roots.map(item)}</ul> : null;
-}

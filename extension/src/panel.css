@@ -37,16 +37,7 @@
 .lattice .search button { display: flex; padding: 0; background: none; border: 0; }
 .lattice .view-toggle { width: 36px; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--muted); }
 .lattice .view-toggle.enabled { color: var(--accent); border-color: #71b7ff55; }
-.lattice .answer-list { display: flex; flex-direction: column; gap: 12px; }
-.lattice .answer-card { padding: 12px 14px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); }
-.lattice .answer-card.active { border-color: #71b7ff99; }
-.lattice .card-meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; color: var(--muted); font-size: 10px; }
-.lattice .card-meta > span { font-family: ui-monospace, "PingFang SC", monospace; }
-.lattice .card-meta > div { display: flex; }
 .lattice .starred { color: #e9b96e; }
-.lattice .answer-link { display: block; width: 100%; padding: 0; text-align: left; border: 0; background: none; }
-.lattice .answer-link h2 { color: var(--text); font-size: 14px; line-height: 1.6; font-weight: 550; margin-bottom: 7px; }
-.lattice .answer-link p { color: var(--muted); font-size: 12px; line-height: 1.8; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .lattice .card-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 14px; }
 .lattice .text-button { display: inline-flex; align-items: center; gap: 3px; border: 0; background: none; padding: 3px 0; color: var(--muted); font-size: 10px; }
 .lattice .text-button:hover { color: var(--accent); }
@@ -54,8 +45,7 @@
 .lattice .branch-button:hover { background: #71b7ff1c; }
 .lattice .rename-form { display: flex; align-items: center; gap: 4px; }
 .lattice .rename-form input { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 5px; padding: 7px; color: var(--text); background: var(--bg); }
-.lattice .tip, .lattice .card-notice { margin-top: 14px; color: var(--muted); font-size: 11px; line-height: 1.8; }
-.lattice .card-notice { color: #e9b96e; }
+.lattice .tip { margin-top: 14px; color: var(--muted); font-size: 11px; line-height: 1.8; }
 .lattice .panel-footer { flex-shrink: 0; display: flex; justify-content: space-between; align-items: center; gap: 10px; border-top: 1px solid var(--line); padding: 11px 16px; color: var(--muted); font-size: 10px; }
 .lattice .panel-footer button { border: 0; background: none; padding: 2px; font-size: 10px; color: var(--muted); }
 .lattice .panel-footer button:hover { color: var(--text); }
@@ -123,10 +113,30 @@
 .lattice .link-branch label { display: grid; gap: 5px; margin-block: 10px; color: var(--muted); font-size: 11px; }
 .lattice .link-branch input, .lattice .link-branch select { min-width: 0; width: 100%; padding: 7px; border: 1px solid var(--line); border-radius: 6px; color: var(--text); background: var(--bg); }
 @media (max-width: 640px) { .lattice .panel { top: 8px; right: 8px; bottom: 8px; max-width: calc(100vw - 16px); } .lattice .conversation-heading { padding-block: 14px; } }
-@media (prefers-reduced-motion: no-preference) { .lattice button, .lattice .answer-card { transition: background-color 140ms, border-color 140ms, color 140ms; } }
-.lattice .tree-intro { color: var(--soft); font-size: 12px; line-height: 1.9; margin-bottom: 16px; }
-.lattice .tree-outline { list-style: none; padding: 10px 0 0 8px; margin: 10px 0 0; border-left: 1px solid #426381; }
-.lattice .tree-outline ul { list-style: none; padding-left: 14px; }
-.lattice .tree-outline-link { display: flex; align-items: center; gap: 6px; padding: 7px 0; width: 100%; background: none; border: 0; color: var(--soft); text-align: left; font-size: 11px; }
-.lattice .tree-outline-link span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lattice .tree-outline-link small { color: var(--muted); font-size: 10px; white-space: nowrap; }
+@media (prefers-reduced-motion: no-preference) { .lattice button { transition: background-color 140ms, border-color 140ms, color 140ms; } }
+.lattice .conversation-tree, .lattice .conversation-tree ul { list-style: none; margin: 0; padding: 0; }
+.lattice .conversation-tree ul { margin-left: 10px; padding-left: 13px; }
+.lattice .conversation-tree li { position: relative; min-width: 0; }
+.lattice .conversation-tree ul > li::before { content: ""; position: absolute; left: -14px; top: 0; bottom: 0; width: 1px; background: #344a61; }
+.lattice .conversation-tree ul > li:last-child::before { bottom: auto; height: 22px; }
+.lattice .conversation-tree ul > li::after { content: ""; position: absolute; left: -14px; top: 22px; width: 13px; height: 1px; background: #344a61; }
+.lattice .conversation-node-row { display: flex; align-items: flex-start; gap: 2px; min-width: 166px; min-height: 44px; padding: 5px 3px; margin-bottom: 3px; border-radius: 7px; }
+.lattice .conversation-node-row:hover { background: #ffffff06; }
+.lattice .conversation-node-row.is-selected { background: #71b7ff14; }
+.lattice .conversation-disclosure, .lattice .conversation-leaf { flex: 0 0 17px; width: 17px; height: 32px; }
+.lattice .conversation-disclosure { display: grid; place-items: center; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--muted); }
+.lattice .conversation-disclosure:hover { color: var(--accent); background: #71b7ff14; }
+.lattice .conversation-node-link { display: flex; align-items: flex-start; gap: 6px; flex: 1; min-width: 0; min-height: 32px; padding: 6px 0; border: 0; border-radius: 3px; background: none; color: var(--soft); text-align: left; font-size: 12px; line-height: 20px; }
+.lattice .conversation-node-link:hover, .lattice .is-selected > .conversation-node-link { color: var(--accent); }
+.lattice .conversation-node-link > svg { flex: 0 0 auto; margin-top: 4px; color: var(--accent); }
+.lattice .conversation-node-label { flex: 1; min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.lattice .conversation-node-link small { flex: 0 0 auto; color: var(--muted); font-size: 10px; white-space: nowrap; }
+.lattice .conversation-node-link small.is-error { color: #ffb5b5; }
+.lattice .conversation-ordinal { flex: 0 0 18px; color: var(--muted); font: 10px/20px ui-monospace, monospace; }
+.lattice [data-kind="main"] > .conversation-node-row > .conversation-node-link { color: var(--text); font-weight: 600; }
+.lattice .conversation-node-actions { display: flex; flex: 0 0 auto; padding-top: 5px; }
+.lattice .conversation-node-actions .icon-button { width: 22px; height: 22px; padding: 4px; }
+.lattice .conversation-node-actions .starred { color: #e9b96e; }
+.lattice .conversation-rename { margin: 2px 2px 10px 22px; }
+.lattice .conversation-navigator .answer-tools { gap: 6px; }
+.lattice .conversation-navigator .view-toggle { width: 32px; }

@@ -81,8 +81,8 @@ async function verifyContent(content, html, answerSelector, question, actionId) 
     assert.equal(floating().getAttribute('aria-modal'), 'false');
     assert.equal(floating().querySelector('.thread-answer a').href, 'https://example.org/branch-source');
     assert.ok(floating().querySelector('.thread-question').textContent.includes('Explain this term'));
-    assert.equal(shadow().querySelectorAll(".answer-card").length, 1);
-    assert.ok(shadow().querySelector(".answer-card").textContent.includes(question));
+    assert.equal(shadow().querySelectorAll(".conversation-tree [data-kind='answer']").length, 1);
+    assert.ok(shadow().querySelector(".conversation-tree [data-kind='answer']").textContent.includes(question));
     assert.equal(answer.parentElement, parent);
     assert.equal(answer.innerHTML, nativeHtml);
     assert.equal(answer.querySelector("a"), citation);
@@ -90,9 +90,9 @@ async function verifyContent(content, html, answerSelector, question, actionId) 
     nativeAction.click();
     assert.equal(nativeClicks, 1);
 
-    for (const label of ["分支", "思维图"]) {
+    for (const label of ["会话图", "思维图"]) {
       [...shadow().querySelectorAll(".tabs button")].find((button) => button.textContent === label).click();
-      await waitFor(() => shadow().querySelector(label === "分支" ? ".branch-map .react-flow" : ".mind-map .react-flow"), errors);
+      await waitFor(() => shadow().querySelector(label === "会话图" ? ".branch-map .react-flow" : ".mind-map .react-flow"), errors);
     }
     shadow().querySelector("[aria-label='收起工作区']").click();
     await waitFor(() => window.document.documentElement.dataset.latticeOpen === "false", errors);
