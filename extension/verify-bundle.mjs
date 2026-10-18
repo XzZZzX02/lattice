@@ -32,7 +32,7 @@ async function waitFor(check, errors) {
   if (errors.length) throw errors[0];
 }
 
-async function verifyContent(content, html, answerSelector, question, actionId) {
+async function verifyContent(content, html, answerSelector, question, actionId, interactive = false) {
   const errors = [];
   const virtualConsole = new VirtualConsole();
   virtualConsole.on("jsdomError", (error) => errors.push(error));
@@ -87,6 +87,24 @@ async function verifyContent(content, html, answerSelector, question, actionId) 
     assert.equal(answer.innerHTML, nativeHtml);
     assert.equal(answer.querySelector("a"), citation);
     assert.equal(window.document.getElementById("native-composer"), composer);
+    if (interactive) {
+      assert.equal(answer.hasAttribute('data-lattice-answer'), false, 'Native applications must retain their original geometry');
+      const tile = answer.querySelector('#tile');
+      let tileClicks = 0;
+      tile.addEventListener('click', () => tileClicks++);
+      tile.click();
+      assert.equal(tileClicks, 1, 'Native application controls must retain their handlers');
+      const mutations = [];
+      const observer = new window.MutationObserver((records) => mutations.push(...records));
+      observer.observe(answer, { attributes: true });
+      for (let frame = 0; frame < 6; frame++) {
+        answer.querySelector('#counter').textContent = `${frame}% peak`;
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      observer.disconnect();
+      assert.equal(mutations.length, 0, 'Application animation must not cause decoration loops');
+      answer.querySelector('#counter').textContent = '42% peak';
+    }
     nativeAction.click();
     assert.equal(nativeClicks, 1);
 
@@ -96,7 +114,7 @@ async function verifyContent(content, html, answerSelector, question, actionId) 
     }
     shadow().querySelector("[aria-label='收起工作区']").click();
     await waitFor(() => window.document.documentElement.dataset.latticeOpen === "false", errors);
-    assert.equal(answer.dataset.latticeActive, "false");
+    assert.equal(answer.dataset.latticeActive, interactive ? undefined : "false");
     // Main-line focus dismisses the surface; the original quote opens it again
     // even when the auxiliary workspace is closed.
     composer.dispatchEvent(new window.Event('focusin', { bubbles: true }));
@@ -115,6 +133,8 @@ export async function verifyExtensionBundle(directory) {
   await verifyContent(content, `<main><article><div data-message-author-role="user" data-message-id="user-one">Keep native features</div></article><article data-turn-id="turn-one"><div data-message-author-role="assistant" data-message-id="answer-one"><p>Native answer with a <a href="https://example.org/source">citation</a>.</p></div><button id="native-action">Native action</button></article><textarea id="native-composer"></textarea></main>`, "[data-message-id='answer-one']", "Keep native features", "native-action");
   const currentChat = await readFile(new URL("./fixtures/current-chat.html", import.meta.url), "utf8");
   await verifyContent(content, currentChat, "[data-chatgpt-selection-message-id='answer-current']", "Keep current native features", "current-native-action");
+  const intelligentChat = await readFile(new URL("./fixtures/intelligent-chat.html", import.meta.url), "utf8");
+  await verifyContent(content, intelligentChat, "[data-chatgpt-selection-message-id='answer-interactive']", "Explore a GPU layout interactively.", "native-action", true);
 
   const chrome = createChrome();
   const worker = { chrome, crypto: webcrypto, URL, console };
@@ -128,5 +148,5 @@ export async function verifyExtensionBundle(directory) {
   });
   assert.equal(result.ok, true);
   assert.deepEqual([...result.presentation.favorites], ["message:answer-one"]);
-  console.log("Built extension verified without Node globals (legacy/current DOM, quote click, floating tree, main-line dismissal, graphs, native controls, service worker).");
+  console.log("Built extension verified without Node globals (legacy/current/Intelligent UI DOM, native widget animation isolation, quote click, floating tree, main-line dismissal, graphs, native controls, service worker).");
 }

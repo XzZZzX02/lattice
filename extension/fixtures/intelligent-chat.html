@@ -1,0 +1,33 @@
+<title>Native interactive fixture - ChatGPT</title>
+<div data-app-shell-active-page="true">
+  <main>
+    <section data-chatgpt-search-unit-key="fallback-turn-0:1:user" data-chatgpt-search-message-ids="user-interactive">
+      <div data-content-search-unit-key="user-interactive">Explore a GPU layout interactively.</div>
+    </section>
+    <section data-chatgpt-search-unit-key="fallback-turn-0:2:assistant" data-chatgpt-search-message-ids="answer-interactive answer-interactive">
+      <h4 data-conversation-role="assistant">ChatGPT said:</h4>
+      <div data-chatgpt-selection-message-id="answer-interactive">
+        <p id="prose">The layout experiment is ready.</p>
+        <div data-dil-source-message-id="answer-interactive" data-markdown-copy="contents">
+          <div data-theme="light">
+            <div data-d-inline-reveal data-dil-message-id="answer-interactive">
+              <h1 data-d-component="heading">GPU Layout Lab</h1>
+              <div data-d-component="card" data-theme="dark">
+                <button id="tile" data-d-component="button">T00</button>
+                <button aria-label="Send">Send</button>
+                <button aria-label="Stop">Stop</button>
+                <input type="range" aria-label="Thread" min="0" max="31" value="0">
+                <textarea aria-label="Widget notes"></textarea>
+                <output id="counter">42% peak</output>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p>Continue discussing KV Cache on the main line.</p>
+      </div>
+      <button id="native-action">More actions</button>
+    </section>
+    <textarea id="native-composer" aria-label="ChatGPT prompt"></textarea>
+    <button aria-label="Send message">Send message</button>
+  </main>
+</div>

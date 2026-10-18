@@ -6,7 +6,7 @@ import { BranchMap } from "./BranchMap";
 import { MindMap } from "./MindMap";
 import { DataControls } from "./DataControls";
 import { linkExcerptHighlights } from "./highlights";
-import { collectChat, decorateAnswers, excerptRange, getAnswerSelection, jumpToAnswer, observeChat } from "./host";
+import { collectChat, createAnswerDecorator, excerptRange, getAnswerSelection, jumpToAnswer, observeChat } from "./host";
 import { FloatingConversationTree } from "./ConversationTree";
 import { ConversationNavigator } from "./ConversationNavigator";
 import { useConversationTree } from "./useConversationTree";
@@ -19,6 +19,7 @@ const liveHref = () => location.href;
 
 export function LatticeApp({ getHref = liveHref }: { getHref?: () => string }) {
   const [snapshot, setSnapshot] = useState(() => collectChat(document, getHref()));
+  const [decorator] = useState(createAnswerDecorator);
   const tree = useConversationTree(snapshot);
   const [presentation, setPresentation] = useState(emptyPresentation);
   const [links, setLinks] = useState<BranchLink[]>([]);
@@ -55,7 +56,8 @@ export function LatticeApp({ getHref = liveHref }: { getHref?: () => string }) {
     const frame = requestAnimationFrame(() => { setActiveId(answer.id); jumpToAnswer(answer); });
     return () => cancelAnimationFrame(frame);
   }, [snapshot.answers, getHref]);
-  useEffect(() => decorateAnswers(snapshot.answers, workspaceVisible && presentation.cardView, activeId), [snapshot.answers, presentation.cardView, activeId, workspaceVisible]);
+  useEffect(() => { decorator.update(snapshot.answers, workspaceVisible && presentation.cardView, activeId); }, [decorator, snapshot.answers, presentation.cardView, activeId, workspaceVisible]);
+  useEffect(() => () => decorator.dispose(), [decorator]);
   useEffect(() => {
     if (!workspaceVisible) return;
     return linkExcerptHighlights(snapshot.answers, presentation.excerpts, (excerpt, anchor) => setLinkedExcerpt({ id: excerpt.id, anchor }));

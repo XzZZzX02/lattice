@@ -2,6 +2,7 @@ import { activeMain, collectChat, findNativeBranchAction } from "./host";
 import { conversationKey } from "./presentation";
 import { request } from "./platform";
 import type { NativeReport } from "./tree-types";
+import { NATIVE_INTERACTIVE } from "./native-content";
 
 function visible(element: HTMLElement): boolean {
   if (element.closest("[hidden], [aria-hidden='true'], [data-app-shell-active-page='false']")) return false;
@@ -12,13 +13,13 @@ function visible(element: HTMLElement): boolean {
   return true;
 }
 function name(element: HTMLElement) { return (element.getAttribute("aria-label") || element.textContent || "").trim(); }
-function buttons() { return [...activeMain()?.querySelectorAll<HTMLButtonElement>("button") ?? []].filter(visible); }
+function buttons() { return [...activeMain()?.querySelectorAll<HTMLButtonElement>("button") ?? []].filter((element) => !element.closest(NATIVE_INTERACTIVE) && visible(element)); }
 function generating() { return buttons().some((button) => /^(stop( generating| streaming)?|停止(生成|流式传输)?)$/i.test(name(button)) || button.dataset.testid === "stop-button"); }
 export function nativeComposer(): HTMLElement | null {
   const main = activeMain();
   const preferred = main?.querySelector<HTMLElement>("#prompt-textarea, [data-testid='prompt-textarea']");
-  if (preferred && visible(preferred)) return preferred;
-  const candidates = [...main?.querySelectorAll<HTMLElement>("textarea, [contenteditable='true']") ?? []].filter(visible);
+  if (preferred && !preferred.closest(NATIVE_INTERACTIVE) && visible(preferred)) return preferred;
+  const candidates = [...main?.querySelectorAll<HTMLElement>("textarea, [contenteditable='true']") ?? []].filter((element) => !element.closest(NATIVE_INTERACTIVE) && visible(element));
   const labeled = candidates.filter((item) => /chatgpt|prompt|message|询问|提问|发送/i.test(`${item.getAttribute("aria-label") ?? ""} ${item.getAttribute("data-placeholder") ?? ""} ${item.getAttribute("placeholder") ?? ""}`));
   return labeled.length === 1 ? labeled[0] : candidates.length === 1 ? candidates[0] : null;
 }
@@ -30,6 +31,7 @@ export function projectMarkdown(element: HTMLElement): string {
   function visit(node: Node): string {
     if (node.nodeType === Node.TEXT_NODE) return escape(node.textContent ?? "");
     if (!(node instanceof HTMLElement)) return "";
+    if (node.matches(NATIVE_INTERACTIVE)) return "\n\n交互内容请打开原生分支查看和操作。\n\n";
     if (node.matches("script, style, button, input, textarea, iframe, svg, [hidden], [aria-hidden='true']")) return "";
     const text = [...node.childNodes].map(visit).join("");
     if (node.tagName === "PRE") return `\n\n\`\`\`\n${node.textContent ?? ""}\n\`\`\`\n\n`;

@@ -30,7 +30,7 @@ The optional Chrome/Edge extension keeps ChatGPT's native conversation, composer
 citations, files, tools, and conversation branches, and adds Lattice presentation
 and organization. It has no model backend or API-key configuration.
 
-Version 0.3.1 centers on a reference-anchored conversation tree: select a term,
+Version 0.3.2 centers on a reference-anchored conversation tree: select a term,
 continue a native ChatGPT branch in a floating card, and click the underlined
 quote to reopen it. Returning to the main conversation dismisses the card while
 retaining its draft and context. Nested branches, excerpts, notes and mind maps

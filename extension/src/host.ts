@@ -1,6 +1,7 @@
 import { selectionFromContainer } from "../../src/lib/selection";
 import { conversationKey } from "./presentation";
 import type { ChatSnapshot, Excerpt, NativeAnswer } from "./types";
+import { hasNativeInteractive, indexText, NATIVE_INTERACTIVE } from "./native-content";
 
 const ROLE = "[data-message-author-role]";
 const SEARCH_UNIT = "[data-chatgpt-search-unit-key]";
@@ -41,7 +42,7 @@ export function collectChat(documentRoot = document, href = location.href): Chat
     const role = legacyRole || element.getAttribute("data-chatgpt-search-unit-key")?.match(/:(user|assistant)$/)?.[1];
     if (role === "user") {
       const content = legacyRole ? element : element.querySelector<HTMLElement>("[data-content-search-unit-key]") ?? element;
-      question = (content.innerText ?? content.textContent ?? "").trim();
+      question = indexText(content);
       continue;
     }
     if (role !== "assistant") continue;
@@ -56,7 +57,7 @@ export function collectChat(documentRoot = document, href = location.href): Chat
       seen.add(identity.id);
       const heading = !legacyRole && message === element ? element.querySelector<HTMLElement>("[data-conversation-role='assistant']") : null;
       const contentElement = heading?.nextElementSibling instanceof HTMLElement ? heading.nextElementSibling : message;
-      answers.push({ ...identity, question, text: (contentElement.innerText ?? contentElement.textContent ?? "").trim(), element: message, contentElement });
+      answers.push({ ...identity, question, text: indexText(contentElement), element: message, contentElement, nativeInteractive: hasNativeInteractive(contentElement) });
     }
   }
   const url = new URL(href);
@@ -75,19 +76,54 @@ export function collectChat(documentRoot = document, href = location.href): Chat
 export function observeChat(onChange: (snapshot: ChatSnapshot) => void, getHref = () => location.href): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
-  let previousRoute = location.pathname;
+  let previousRoute = getHref();
+  let previous: ChatSnapshot | undefined;
   function update() {
     clearTimeout(timer);
     timer = undefined;
-    if (!stopped) onChange(collectChat(document, getHref()));
+    if (stopped) return;
+    const next = collectChat(document, getHref());
+    const sameAnswers = previous && next.answers.length === previous.answers.length && next.answers.every((answer, index) => {
+      const old = previous!.answers[index];
+      return answer.id === old.id && answer.stableId === old.stableId && answer.question === old.question && answer.text === old.text && answer.element === old.element && answer.contentElement === old.contentElement && answer.nativeInteractive === old.nativeInteractive;
+    });
+    if (sameAnswers) next.answers = previous!.answers;
+    if (sameAnswers && next.route === previous!.route && next.title === previous!.title && next.nativeOverlay === previous!.nativeOverlay) return;
+    previous = next;
+    onChange(next);
   }
-  const observer = new MutationObserver(() => {
+  const dialogSelector = "dialog[open], [role='dialog'][aria-modal='true']";
+  const contains = (node: Node, selector: string) => node instanceof Element && (node.matches(selector) || !!node.querySelector(selector));
+  const observer = new MutationObserver((records) => {
+    const main = activeMain();
+    const relevant = records.some((record) => {
+      const element = record.target instanceof Element ? record.target : record.target.parentElement;
+      if (!element || element.closest("#lattice-chatgpt-extension, [data-lattice-tree-host]")) return false;
+      if (record.type === "attributes" && record.attributeName === "data-app-shell-active-page") return true;
+      // Native modal portals must still make the workspace yield, including a
+      // dialog opened from a native application. Ordinary widget state is inert.
+      if (record.type === "attributes" && ["role", "aria-modal", "open", "hidden", "aria-hidden"].includes(record.attributeName!)) {
+        if (record.attributeName === "role" && record.oldValue === "dialog") return true;
+        if (element.matches("dialog, [role='dialog']") || element.querySelector(dialogSelector)) return true;
+      }
+      if (record.type === "childList" && [...record.addedNodes, ...record.removedNodes].some((node) => contains(node, dialogSelector) || contains(node, "main, [data-app-shell-active-page]"))) return true;
+      if (element.closest("title")) return true;
+      if (element === document.head && record.type === "childList" && [...record.addedNodes, ...record.removedNodes].some((node) => contains(node, "title"))) return true;
+      if (!main?.contains(element)) return false;
+      if (record.type === "attributes" && ["data-dil-message-id", "data-dil-source-message-id"].includes(record.attributeName!)) return true;
+      if (element.closest(NATIVE_INTERACTIVE)) return false;
+      // Composer typing, toolbars and unrelated native navigation are not
+      // message changes. Structural insertions still discover streamed turns.
+      return !!element.closest(`${ROLE}, ${SEARCH_UNIT}`) || record.type === "attributes" && ["data-message-author-role", "data-chatgpt-search-unit-key"].includes(record.attributeName!) || record.type === "childList" && [...record.addedNodes, ...record.removedNodes].some((node) => contains(node, `${ROLE}, ${SEARCH_UNIT}`));
+    });
+    if (!relevant) return;
     // Throttle rather than debounce: keep navigation usable during a long stream.
     if (!timer) timer = setTimeout(update, 180);
   });
-  observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["data-app-shell-active-page", "data-message-id", "data-message-author-role", "data-turn-id", "data-testid", "data-chatgpt-search-unit-key", "data-chatgpt-search-message-ids", "data-chatgpt-selection-message-id", "data-conversation-role", "hidden", "aria-hidden", "aria-modal", "open", "role"] });
+  observer.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeOldValue: true, attributeFilter: ["data-app-shell-active-page", "data-message-id", "data-message-author-role", "data-turn-id", "data-testid", "data-chatgpt-search-unit-key", "data-chatgpt-search-message-ids", "data-chatgpt-selection-message-id", "data-conversation-role", "data-dil-message-id", "data-dil-source-message-id", "hidden", "aria-hidden", "aria-modal", "open", "role"] });
+  if (document.head) observer.observe(document.head, { subtree: true, childList: true, characterData: true });
   const routeTimer = setInterval(() => {
-    if (location.pathname !== previousRoute) { previousRoute = location.pathname; update(); }
+    if (getHref() !== previousRoute) { previousRoute = getHref(); update(); }
   }, 500);
   window.addEventListener("popstate", update);
   window.addEventListener("hashchange", update);
@@ -96,17 +132,29 @@ export function observeChat(onChange: (snapshot: ChatSnapshot) => void, getHref 
 }
 
 export function decorateAnswers(answers: NativeAnswer[], enabled: boolean, activeId: string | null): () => void {
-  document.documentElement.dataset.latticeCards = String(enabled);
-  for (const answer of answers) {
-    answer.element.setAttribute("data-lattice-answer", "");
-    answer.element.dataset.latticeActive = String(enabled && answer.id === activeId);
-  }
-  return () => {
-    document.documentElement.removeAttribute("data-lattice-cards");
-    for (const answer of answers) {
-      answer.element.removeAttribute("data-lattice-answer");
-      answer.element.removeAttribute("data-lattice-active");
-    }
+  const decorator = createAnswerDecorator();
+  decorator.update(answers, enabled, activeId);
+  return decorator.dispose;
+}
+
+export function createAnswerDecorator() {
+  let decorated = new Set<HTMLElement>();
+  const set = (element: HTMLElement, name: string, value: string) => { if (element.getAttribute(name) !== value) element.setAttribute(name, value); };
+  const remove = (element: HTMLElement) => { element.removeAttribute("data-lattice-answer"); element.removeAttribute("data-lattice-active"); };
+  return {
+    update(answers: NativeAnswer[], enabled: boolean, activeId: string | null) {
+      set(document.documentElement, "data-lattice-cards", String(enabled));
+      const next = new Set<HTMLElement>();
+      for (const answer of answers) {
+        if (answer.nativeInteractive) continue;
+        next.add(answer.element);
+        set(answer.element, "data-lattice-answer", "");
+        set(answer.element, "data-lattice-active", String(enabled && answer.id === activeId));
+      }
+      for (const element of decorated) if (!next.has(element)) remove(element);
+      decorated = next;
+    },
+    dispose() { document.documentElement.removeAttribute("data-lattice-cards"); for (const element of decorated) remove(element); decorated.clear(); }
   };
 }
 

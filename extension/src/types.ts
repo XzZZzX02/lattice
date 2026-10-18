@@ -5,6 +5,7 @@ export interface NativeAnswer {
   text: string;
   element: HTMLElement;
   contentElement: HTMLElement;
+  nativeInteractive?: boolean;
 }
 
 export interface ChatSnapshot {
