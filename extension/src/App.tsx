@@ -10,7 +10,7 @@ import { collectChat, createAnswerDecorator, excerptRange, getAnswerSelection, j
 import { FloatingConversationTree } from "./ConversationTree";
 import { ConversationNavigator } from "./ConversationNavigator";
 import { useConversationTree } from "./useConversationTree";
-import { useTheme } from "./useTheme";
+import { THEME_OPTIONS, useTheme } from "./useTheme";
 import { platform, request } from "./platform";
 import { BRANCHES_KEY, emptyPresentation, mutatePresentation, presentationKey, readPresentation } from "./presentation";
 import type { BranchLink, Excerpt, NativeAnswer, PresentationMutation } from "./types";
@@ -188,11 +188,15 @@ export function LatticeApp({ getHref = liveHref }: { getHref?: () => string }) {
   const floating = selection?.route === snapshot.route ? positionFloatingToolbar(selection.anchor, { width: innerWidth, height: innerHeight }, { width: 252, height: 44 }) : null;
   if (floating && selection && selection.anchor.bottom + 52 < innerHeight) floating.top = selection.anchor.bottom + 8;
 
-  return <div className="lattice" data-theme={theme.mode} data-native-scheme={theme.scheme}>
+  return <div className="lattice" data-theme={theme.mode === "lattice" ? "lattice" : "native"} data-theme-mode={theme.mode} data-native-scheme={theme.scheme}>
     <FloatingConversationTree snapshot={snapshot} tree={tree} hidden={!!snapshot.nativeOverlay} />
     {!snapshot.nativeOverlay && <button className={`launcher ${open ? "is-open" : ""}`} ref={launcher} onClick={() => { setOpen(!open); if (!open) setTimeout(() => searchInput.current?.focus(), 0); }} aria-label={open ? "收起 Lattice" : "打开 Lattice"} aria-expanded={open} type="button"><LatticeLogo /><span>Lattice</span><ChevronRight size={14} /></button>}
     {open && <aside className={`panel ${wide ? "wide" : ""}`} style={{ display: workspaceVisible ? undefined : "none" }} aria-label="Lattice 对话工作区" onKeyDown={(event) => { if (event.key === "Escape") { setOpen(false); launcher.current?.focus(); } }}>
-      <header className="panel-header"><div className="brand"><LatticeLogo /><strong>Lattice</strong><span>for ChatGPT</span></div><div className="panel-header-actions"><button className="icon-button" aria-label={theme.mode === "native" ? "切换到 Lattice 深色主题" : "切换到 ChatGPT 原生主题"} title={theme.mode === "native" ? "当前：ChatGPT 原生主题 · 点击切换" : "当前：Lattice 深色主题 · 点击切换"} aria-pressed={theme.mode === "native"} disabled={!theme.ready || theme.saving} onClick={() => void theme.toggle()}><Paintbrush size={15} /></button><button className="icon-button" aria-label={wide ? "收窄工作区" : "展开工作区"} onClick={() => setWide(!wide)}>{wide ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button><button className="icon-button" onClick={() => { setOpen(false); launcher.current?.focus(); }} title="收起工作区" aria-label="收起工作区"><PanelRightClose size={17} /></button></div></header>
+      <header className="panel-header">
+        <div className="brand"><LatticeLogo /><strong>Lattice</strong><span>for ChatGPT</span></div>
+        <div className="panel-header-actions"><button className="icon-button" aria-label={wide ? "收窄工作区" : "展开工作区"} onClick={() => setWide(!wide)}>{wide ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button><button className="icon-button" onClick={() => { setOpen(false); launcher.current?.focus(); }} title="收起工作区" aria-label="收起工作区"><PanelRightClose size={17} /></button></div>
+        <label className="theme-picker"><span><Paintbrush size={13} />主题</span><select aria-label="Lattice 主题" value={theme.mode} disabled={!theme.ready || theme.saving} onChange={(event) => void theme.select(event.currentTarget.value)} onKeyDown={(event) => { if (event.key === "Escape") event.stopPropagation(); }}>{THEME_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+      </header>
       <div className="conversation-heading"><span className="connection"><CheckCheck size={13} />ChatGPT 原生对话</span><h1 title={snapshot.title}>{snapshot.title === "ChatGPT" ? snapshot.answers[0]?.question || "从一个问题开始" : snapshot.title}</h1><p>{snapshot.answers.length} 条回答<span>·</span>问答、引用与工具由 ChatGPT 处理</p></div>
       <nav className="tabs" aria-label="工作区视图">{([{ id: "answers", label: "对话树", Icon: ListTree }, { id: "branches", label: "会话图", Icon: Network }, { id: "excerpts", label: "摘录", Icon: Quote }, { id: "mindmap", label: "思维图", Icon: BrainCircuit }] as const).map(({ id, label, Icon }) => <button key={id} onClick={() => setView(id)} aria-current={view === id ? "page" : undefined}><Icon size={15} />{label}{id === "excerpts" && presentation.excerpts.length > 0 && <span>{presentation.excerpts.length}</span>}</button>)}</nav>
       {(error || tree.error || theme.error) && <div className="error" role="alert">{error || tree.error || theme.error}<button className="icon-button" aria-label="关闭错误提示" onClick={() => { setError(""); tree.clearError(); theme.clearError(); }}><X size={14} /></button></div>}

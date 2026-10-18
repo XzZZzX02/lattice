@@ -2,26 +2,21 @@ import { useEffect, useState } from "react";
 import { platform } from "./platform";
 
 export const THEME_KEY = "lattice:theme:v1";
-type Theme = "lattice" | "native";
+export const THEME_OPTIONS = [
+  { value: "lattice", label: "Lattice 主题" },
+  { value: "native-light", label: "ChatGPT 原生浅色" },
+  { value: "native-dark", label: "ChatGPT 原生深色" },
+  { value: "system", label: "跟随系统" }
+] as const;
+type Theme = typeof THEME_OPTIONS[number]["value"];
 type Scheme = "light" | "dark";
-const readTheme = (value: unknown): Theme => value === "native" ? "native" : "lattice";
-
-export function nativeScheme(): Scheme {
-  for (const element of [document.documentElement, document.body]) {
-    if (!element) continue;
-    if (element.classList.contains("dark")) return "dark";
-    if (element.classList.contains("light")) return "light";
-    const explicit = element.getAttribute("data-theme") || element.style.colorScheme;
-    if (explicit === "dark" || explicit === "light") return explicit;
-  }
-  const computed = getComputedStyle(document.documentElement).colorScheme;
-  if (computed === "dark" || computed === "light") return computed;
-  return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-}
+// The previous native preference becomes the adaptive native palette.
+const readTheme = (value: unknown): Theme => value === "native" ? "system" : THEME_OPTIONS.find((option) => option.value === value)?.value ?? "lattice";
+const systemScheme = (): Scheme => matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 
 export function useTheme() {
   const [mode, setMode] = useState<Theme>("lattice");
-  const [scheme, setScheme] = useState(nativeScheme);
+  const [system, setSystem] = useState(systemScheme);
   const [ready, setReady] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -45,22 +40,19 @@ export function useTheme() {
   }, []);
 
   useEffect(() => {
-    if (mode !== "native") return;
-    const update = () => setScheme(nativeScheme());
-    const observer = new MutationObserver(update);
-    // Root attributes only: never subscribe to the live Intelligent UI subtree.
-    const options = { attributes: true, attributeFilter: ["class", "style", "data-theme"] };
-    observer.observe(document.documentElement, options);
-    observer.observe(document.body, options);
+    if (mode !== "system") return;
+    // Only observe OS appearance; ChatGPT's own override remains independent.
     const media = matchMedia("(prefers-color-scheme: dark)");
+    const update = () => setSystem(media.matches ? "dark" : "light");
     media.addEventListener?.("change", update);
     update();
-    return () => { observer.disconnect(); media.removeEventListener?.("change", update); };
+    return () => { media.removeEventListener?.("change", update); };
   }, [mode]);
 
-  async function toggle() {
+  async function select(value: string) {
     if (!ready || saving) return;
-    const next = mode === "lattice" ? "native" : "lattice";
+    const next = readTheme(value);
+    if (next === mode) return;
     setSaving(true);
     setMode(next);
     try { await platform().storage.local.set({ [THEME_KEY]: next }); setError(""); }
@@ -68,5 +60,6 @@ export function useTheme() {
     finally { setSaving(false); }
   }
 
-  return { mode, scheme, ready, saving, error, clearError: () => setError(""), toggle };
+  const scheme: Scheme = mode === "system" ? system : mode === "native-light" ? "light" : "dark";
+  return { mode, scheme, ready, saving, error, clearError: () => setError(""), select };
 }
