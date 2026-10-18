@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowUpRight, BrainCircuit, CheckCheck, ChevronRight, Copy, GitBranch, ListTree, Maximize2, Minimize2, Network, Paintbrush, PanelRightClose, Quote, Trash2, X } from "lucide-react";
+import { ArrowUpRight, BrainCircuit, CheckCheck, ChevronRight, Copy, GitBranch, ListTree, Maximize2, Minimize2, Network, PanelRightClose, Quote, Trash2, X } from "lucide-react";
 import { LatticeLogo } from "../../src/components/LatticeLogo";
 import { positionFloatingToolbar } from "../../src/lib/floating";
 import { BranchMap } from "./BranchMap";
@@ -10,7 +10,8 @@ import { collectChat, createAnswerDecorator, excerptRange, getAnswerSelection, j
 import { FloatingConversationTree } from "./ConversationTree";
 import { ConversationNavigator } from "./ConversationNavigator";
 import { useConversationTree } from "./useConversationTree";
-import { THEME_OPTIONS, useTheme } from "./useTheme";
+import { useTheme } from "./useTheme";
+import { ThemeMenu } from "./ThemeMenu";
 import { platform, request } from "./platform";
 import { BRANCHES_KEY, emptyPresentation, mutatePresentation, presentationKey, readPresentation } from "./presentation";
 import type { BranchLink, Excerpt, NativeAnswer, PresentationMutation } from "./types";
@@ -194,8 +195,7 @@ export function LatticeApp({ getHref = liveHref }: { getHref?: () => string }) {
     {open && <aside className={`panel ${wide ? "wide" : ""}`} style={{ display: workspaceVisible ? undefined : "none" }} aria-label="Lattice 对话工作区" onKeyDown={(event) => { if (event.key === "Escape") { setOpen(false); launcher.current?.focus(); } }}>
       <header className="panel-header">
         <div className="brand"><LatticeLogo /><strong>Lattice</strong><span>for ChatGPT</span></div>
-        <div className="panel-header-actions"><button className="icon-button" aria-label={wide ? "收窄工作区" : "展开工作区"} onClick={() => setWide(!wide)}>{wide ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button><button className="icon-button" onClick={() => { setOpen(false); launcher.current?.focus(); }} title="收起工作区" aria-label="收起工作区"><PanelRightClose size={17} /></button></div>
-        <label className="theme-picker"><span><Paintbrush size={13} />主题</span><select aria-label="Lattice 主题" value={theme.mode} disabled={!theme.ready || theme.saving} onChange={(event) => void theme.select(event.currentTarget.value)} onKeyDown={(event) => { if (event.key === "Escape") event.stopPropagation(); }}>{THEME_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+        <div className="panel-header-actions"><ThemeMenu theme={theme} /><button className="icon-button" aria-label={wide ? "收窄工作区" : "展开工作区"} onClick={() => setWide(!wide)}>{wide ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button><button className="icon-button" onClick={() => { setOpen(false); launcher.current?.focus(); }} title="收起工作区" aria-label="收起工作区"><PanelRightClose size={17} /></button></div>
       </header>
       <div className="conversation-heading"><span className="connection"><CheckCheck size={13} />ChatGPT 原生对话</span><h1 title={snapshot.title}>{snapshot.title === "ChatGPT" ? snapshot.answers[0]?.question || "从一个问题开始" : snapshot.title}</h1><p>{snapshot.answers.length} 条回答<span>·</span>问答、引用与工具由 ChatGPT 处理</p></div>
       <nav className="tabs" aria-label="工作区视图">{([{ id: "answers", label: "对话树", Icon: ListTree }, { id: "branches", label: "会话图", Icon: Network }, { id: "excerpts", label: "摘录", Icon: Quote }, { id: "mindmap", label: "思维图", Icon: BrainCircuit }] as const).map(({ id, label, Icon }) => <button key={id} onClick={() => setView(id)} aria-current={view === id ? "page" : undefined}><Icon size={15} />{label}{id === "excerpts" && presentation.excerpts.length > 0 && <span>{presentation.excerpts.length}</span>}</button>)}</nav>

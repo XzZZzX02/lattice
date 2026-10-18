@@ -30,15 +30,16 @@ The optional Chrome/Edge extension keeps ChatGPT's native conversation, composer
 citations, files, tools, and conversation branches, and adds Lattice presentation
 and organization. It has no model backend or API-key configuration.
 
-Version 0.3.4 centers on a reference-anchored conversation tree: select a term,
+Version 0.3.5 centers on a reference-anchored conversation tree: select a term,
 continue a native ChatGPT branch in a floating card, and click the underlined
 quote to reopen it. Returning to the main conversation dismisses the card while
 retaining its draft and context. Nested branches, excerpts, notes and mind maps
 remain available. The sidebar uses an expandable tree of main-line answers,
 quoted branches and child branches, with ancestor-preserving search.
-The header theme dropdown offers Lattice, ChatGPT light, ChatGPT dark, and system
-appearance. Explicit light/dark choices stay fixed; system appearance follows
-the OS. The preference is remembered locally without changing ChatGPT's setting.
+The header's compact paintbrush button opens a menu for Lattice, ChatGPT light,
+ChatGPT dark, and system appearance. Explicit light/dark choices stay fixed;
+system appearance follows the OS. The preference is remembered locally without
+changing ChatGPT's setting.
 
 ```bash
 pnpm extension:build
