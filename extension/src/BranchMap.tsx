@@ -37,10 +37,10 @@ export function BranchMap({ snapshot, links }: { snapshot: ChatSnapshot; links: 
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
         data: { label: <a href={record.url} title={record.title} className={id === currentKey ? "map-link current" : "map-link"}><span>{id === currentKey ? "当前会话" : "原生会话"}</span><strong>{record.title || "ChatGPT 对话"}</strong></a> },
-        style: { width: 190, padding: 0, borderRadius: 10, border: id === currentKey ? "1px solid #71b7ff" : "1px solid #344357", background: "#121924", color: "#f2f6fa" }
+        style: { width: 190, padding: 0, borderRadius: 10, border: id === currentKey ? "1px solid var(--accent)" : "1px solid var(--line-strong)", background: "var(--surface)", color: "var(--text)" }
       };
     });
-    const edges: Edge[] = connected.map((link) => ({ id: `${link.sourceKey}:${link.targetKey}`, source: link.sourceKey, target: link.targetKey, type: "smoothstep", style: { stroke: "#71b7ff" } }));
+    const edges: Edge[] = connected.map((link) => ({ id: `${link.sourceKey}:${link.targetKey}`, source: link.sourceKey, target: link.targetKey, type: "smoothstep", style: { stroke: "var(--accent)" } }));
     return { nodes, edges };
   }, [connected, snapshot]);
 
@@ -48,7 +48,7 @@ export function BranchMap({ snapshot, links }: { snapshot: ChatSnapshot; links: 
     <div className="section-intro"><GitBranch size={20} /><h2>会话图</h2><p>{graph.nodes.length} 个会话 · {connected.length} 次分叉</p></div>
     <div className="branch-map" aria-label="原生会话分支图">
       <ReactFlow key={snapshot.conversationKey ?? snapshot.route} nodes={graph.nodes} edges={graph.edges} fitView minZoom={0.2} maxZoom={1.3} nodesDraggable={false} nodesConnectable={false} elementsSelectable={false} proOptions={{ hideAttribution: true }}>
-        <Background color="#2a3646" gap={20} />
+        <Background color="var(--map-grid)" gap={20} />
         <Controls showInteractive={false} />
       </ReactFlow>
     </div>

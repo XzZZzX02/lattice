@@ -73,6 +73,20 @@ async function verifyContent(content, html, answerSelector, question, actionId, 
     window.eval(content);
     const shadow = () => window.document.getElementById("lattice-chatgpt-extension")?.shadowRoot;
     await waitFor(() => shadow()?.querySelector("[aria-label='置顶回答 1']")?.disabled === false, errors);
+    const workspace = () => shadow().querySelector('.lattice');
+    const themeButton = () => shadow().querySelector('[aria-label="切换到 ChatGPT 原生主题"]');
+    await waitFor(() => themeButton()?.disabled === false, errors);
+    themeButton().click();
+    await waitFor(() => workspace().dataset.theme === 'native', errors);
+    assert.equal(window.chrome.values['lattice:theme:v1'], 'native');
+    window.document.documentElement.classList.add('dark');
+    await waitFor(() => workspace().dataset.nativeScheme === 'dark', errors);
+    window.document.documentElement.classList.replace('dark', 'light');
+    await waitFor(() => workspace().dataset.nativeScheme === 'light', errors);
+    shadow().querySelector('[aria-label="切换到 Lattice 深色主题"]').click();
+    await waitFor(() => workspace().dataset.theme === 'lattice', errors);
+    assert.equal(answer.innerHTML, nativeHtml, 'Theme switching must not replace native content');
+    assert.equal(window.document.getElementById('native-composer'), composer);
     const floating = () => shadow()?.querySelector('.floating-tree');
     assert.equal(floating(), null, 'Loading saved cards must not open a popover over the main conversation');
     const openReference = () => answer.dispatchEvent(new window.MouseEvent('click', { bubbles: true, clientX: 100, clientY: 110 }));
@@ -148,5 +162,5 @@ export async function verifyExtensionBundle(directory) {
   });
   assert.equal(result.ok, true);
   assert.deepEqual([...result.presentation.favorites], ["message:answer-one"]);
-  console.log("Built extension verified without Node globals (legacy/current/Intelligent UI DOM, native widget animation isolation, quote click, floating tree, main-line dismissal, graphs, native controls, service worker).");
+  console.log("Built extension verified without Node globals (theme switching and native light/dark sync, legacy/current/Intelligent UI DOM, native widget animation isolation, quote click, floating tree, main-line dismissal, graphs, native controls, service worker).");
 }

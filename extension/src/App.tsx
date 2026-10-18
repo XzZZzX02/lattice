@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowUpRight, BrainCircuit, CheckCheck, ChevronRight, Copy, GitBranch, ListTree, Maximize2, Minimize2, Network, PanelRightClose, Quote, Trash2, X } from "lucide-react";
+import { ArrowUpRight, BrainCircuit, CheckCheck, ChevronRight, Copy, GitBranch, ListTree, Maximize2, Minimize2, Network, Paintbrush, PanelRightClose, Quote, Trash2, X } from "lucide-react";
 import { LatticeLogo } from "../../src/components/LatticeLogo";
 import { positionFloatingToolbar } from "../../src/lib/floating";
 import { BranchMap } from "./BranchMap";
@@ -10,6 +10,7 @@ import { collectChat, createAnswerDecorator, excerptRange, getAnswerSelection, j
 import { FloatingConversationTree } from "./ConversationTree";
 import { ConversationNavigator } from "./ConversationNavigator";
 import { useConversationTree } from "./useConversationTree";
+import { useTheme } from "./useTheme";
 import { platform, request } from "./platform";
 import { BRANCHES_KEY, emptyPresentation, mutatePresentation, presentationKey, readPresentation } from "./presentation";
 import type { BranchLink, Excerpt, NativeAnswer, PresentationMutation } from "./types";
@@ -21,6 +22,7 @@ export function LatticeApp({ getHref = liveHref }: { getHref?: () => string }) {
   const [snapshot, setSnapshot] = useState(() => collectChat(document, getHref()));
   const [decorator] = useState(createAnswerDecorator);
   const tree = useConversationTree(snapshot);
+  const theme = useTheme();
   const [presentation, setPresentation] = useState(emptyPresentation);
   const [links, setLinks] = useState<BranchLink[]>([]);
   const [open, setOpen] = useState(true);
@@ -186,14 +188,14 @@ export function LatticeApp({ getHref = liveHref }: { getHref?: () => string }) {
   const floating = selection?.route === snapshot.route ? positionFloatingToolbar(selection.anchor, { width: innerWidth, height: innerHeight }, { width: 252, height: 44 }) : null;
   if (floating && selection && selection.anchor.bottom + 52 < innerHeight) floating.top = selection.anchor.bottom + 8;
 
-  return <div className="lattice">
+  return <div className="lattice" data-theme={theme.mode} data-native-scheme={theme.scheme}>
     <FloatingConversationTree snapshot={snapshot} tree={tree} hidden={!!snapshot.nativeOverlay} />
     {!snapshot.nativeOverlay && <button className={`launcher ${open ? "is-open" : ""}`} ref={launcher} onClick={() => { setOpen(!open); if (!open) setTimeout(() => searchInput.current?.focus(), 0); }} aria-label={open ? "收起 Lattice" : "打开 Lattice"} aria-expanded={open} type="button"><LatticeLogo /><span>Lattice</span><ChevronRight size={14} /></button>}
     {open && <aside className={`panel ${wide ? "wide" : ""}`} style={{ display: workspaceVisible ? undefined : "none" }} aria-label="Lattice 对话工作区" onKeyDown={(event) => { if (event.key === "Escape") { setOpen(false); launcher.current?.focus(); } }}>
-      <header className="panel-header"><div className="brand"><LatticeLogo /><strong>Lattice</strong><span>for ChatGPT</span></div><div><button className="icon-button" aria-label={wide ? "收窄工作区" : "展开工作区"} onClick={() => setWide(!wide)}>{wide ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button><button className="icon-button" onClick={() => { setOpen(false); launcher.current?.focus(); }} title="收起工作区" aria-label="收起工作区"><PanelRightClose size={17} /></button></div></header>
+      <header className="panel-header"><div className="brand"><LatticeLogo /><strong>Lattice</strong><span>for ChatGPT</span></div><div className="panel-header-actions"><button className="icon-button" aria-label={theme.mode === "native" ? "切换到 Lattice 深色主题" : "切换到 ChatGPT 原生主题"} title={theme.mode === "native" ? "当前：ChatGPT 原生主题 · 点击切换" : "当前：Lattice 深色主题 · 点击切换"} aria-pressed={theme.mode === "native"} disabled={!theme.ready || theme.saving} onClick={() => void theme.toggle()}><Paintbrush size={15} /></button><button className="icon-button" aria-label={wide ? "收窄工作区" : "展开工作区"} onClick={() => setWide(!wide)}>{wide ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button><button className="icon-button" onClick={() => { setOpen(false); launcher.current?.focus(); }} title="收起工作区" aria-label="收起工作区"><PanelRightClose size={17} /></button></div></header>
       <div className="conversation-heading"><span className="connection"><CheckCheck size={13} />ChatGPT 原生对话</span><h1 title={snapshot.title}>{snapshot.title === "ChatGPT" ? snapshot.answers[0]?.question || "从一个问题开始" : snapshot.title}</h1><p>{snapshot.answers.length} 条回答<span>·</span>问答、引用与工具由 ChatGPT 处理</p></div>
       <nav className="tabs" aria-label="工作区视图">{([{ id: "answers", label: "对话树", Icon: ListTree }, { id: "branches", label: "会话图", Icon: Network }, { id: "excerpts", label: "摘录", Icon: Quote }, { id: "mindmap", label: "思维图", Icon: BrainCircuit }] as const).map(({ id, label, Icon }) => <button key={id} onClick={() => setView(id)} aria-current={view === id ? "page" : undefined}><Icon size={15} />{label}{id === "excerpts" && presentation.excerpts.length > 0 && <span>{presentation.excerpts.length}</span>}</button>)}</nav>
-      {(error || tree.error) && <div className="error" role="alert">{error || tree.error}<button className="icon-button" aria-label="关闭错误提示" onClick={() => { setError(""); tree.clearError(); }}><X size={14} /></button></div>}
+      {(error || tree.error || theme.error) && <div className="error" role="alert">{error || tree.error || theme.error}<button className="icon-button" aria-label="关闭错误提示" onClick={() => { setError(""); tree.clearError(); theme.clearError(); }}><X size={14} /></button></div>}
       {!snapshot.conversationKey && <p className="session-notice">此页面尚无已保存的会话地址，整理仅保留在当前页面。</p>}
       <div className="panel-body">
         {incomingBranch?.excerpt && <section className="branch-context"><span><GitBranch size={13} />这条分支的探索线索</span><blockquote>{incomingBranch.excerpt.text}</blockquote><div className="card-footer"><a href={incomingBranch.sourceUrl}>返回分支起点<ArrowUpRight size={12} /></a><button className="text-button" onClick={() => void copy(incomingBranch.excerpt!.text)}>复制摘录<Copy size={12} /></button></div></section>}

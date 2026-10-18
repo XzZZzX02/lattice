@@ -1,4 +1,4 @@
-# Lattice for ChatGPT · 悬浮树形对话原型 0.3.2
+# Lattice for ChatGPT · 悬浮树形对话原型 0.3.3
 
 在冗长对话里读到不熟悉的专业名词，选中它，在引用旁展开悬浮支线卡片连续追问。原文留下下划线，点击即可重新展开；回到主线阅读或输入时自动收起。支线可以再长出子支线，每张卡片绑定自己的 ChatGPT 原生分支。
 
@@ -7,6 +7,8 @@
 1. Chrome 打开 `chrome://extensions`，Edge 打开 `edge://extensions`。
 2. 开启开发者模式，加载仓库 `dist-extension/`；使用 `artifacts/lattice-chatgpt-extension.zip` 时先解压，再选择包含 manifest.json 的文件夹。
 3. 已安装的版本点击“重新加载”，再刷新 ChatGPT。最低 Chromium 版本为 120。
+
+侧栏顶部的画笔按钮在“Lattice 深色主题”和“ChatGPT 原生主题”间切换。原生主题跟随页面的浅色/深色设置，并应用到树形导航、摘录、会话图、思维图和悬浮支线。偏好独立保存在本机，刷新和切换会话后保留。
 
 ## 核心用法
 
