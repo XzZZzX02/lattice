@@ -58,8 +58,6 @@ pnpm extension:dev
 
 构建输出与桌面版隔离。生成 ZIP 前会直接执行最终 content script 和 service worker，检查无 Node 全局对象时的启动、新旧原生 DOM 与原生控件保留。本地演示使用模拟分支与回答，页面明确标注，不产生模型调用。
 
-原生分支上下文与本轮悬浮交互的验证范围分开记录，详见 [验证记录](ACCEPTANCE.md)。
-
 代码：`src/ConversationTree.tsx` 为悬浮卡片，`src/ConversationNavigator.tsx` 为侧栏树形导航，`src/tree-reference.ts` 为非破坏式引用标记，`src/tree-background.ts` 为原生分支协调，`src/native-relay.ts` 为原生页面输入与只读回答投影。详见 `docs/adr/0006-reference-anchored-floating-tree.md`。
 
 参考：[Chrome Tabs](https://developer.chrome.com/docs/extensions/reference/api/tabs)、[Chrome Message passing](https://developer.chrome.com/docs/extensions/develop/concepts/messaging)。

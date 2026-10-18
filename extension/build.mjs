@@ -32,7 +32,6 @@ for (const filename of ["manifest.json", "native.css"]) {
   await copyFile(resolve(root, "extension/public", filename), resolve(output, filename));
 }
 await copyFile(resolve(root, "extension/README.md"), resolve(output, "INSTALL.md"));
-await copyFile(resolve(root, "extension/ACCEPTANCE.md"), resolve(output, "ACCEPTANCE.md"));
 const manifest = JSON.parse(await readFile(resolve(output, "manifest.json"), "utf8"));
 if (manifest.content_scripts[0].js[0] !== "content.js") throw new Error("Invalid extension bundle");
 await verifyExtensionBundle(output);
