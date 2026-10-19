@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import currentChat from "../fixtures/current-chat.html?raw";
-import { collectChat, decorateAnswers, excerptRange, findNativeBranchAction } from "./host";
+import { collectChat, decorateAnswers, excerptRange, findNativeBranchAction, jumpToAnswer } from "./host";
 
 const href = "https://chatgpt.com/c/source-chat";
 beforeEach(() => {
@@ -11,6 +11,20 @@ beforeEach(() => {
 afterEach(() => { document.body.innerHTML = ""; vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("ChatGPT DOM adapter", () => {
+  it("jumps to the beginning of the selected answer and resolves a live replacement", () => {
+    const answer = collectChat(document, href).answers[0];
+    const originalScroll = vi.spyOn(answer.element, "scrollIntoView");
+    jumpToAnswer(answer);
+    expect(originalScroll).toHaveBeenCalledWith(expect.objectContaining({ block: "start", inline: "nearest" }));
+
+    const replacement = answer.element.cloneNode(true) as HTMLElement;
+    answer.element.replaceWith(replacement);
+    const replacementScroll = vi.fn();
+    Object.defineProperty(replacement, "scrollIntoView", { configurable: true, value: replacementScroll });
+    jumpToAnswer(answer);
+    expect(replacementScroll).toHaveBeenCalledWith(expect.objectContaining({ block: "start", inline: "nearest" }));
+  });
+
   it("reads the current native message structure without headings, controls or sidebar content", () => {
     document.body.innerHTML = currentChat;
     const [answer] = collectChat(document, href).answers;

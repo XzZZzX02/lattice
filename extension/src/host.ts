@@ -75,14 +75,44 @@ export function collectChat(documentRoot = document, href = location.href): Chat
 
 export function observeChat(onChange: (snapshot: ChatSnapshot) => void, getHref = () => location.href): () => void {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
   let previousRoute = getHref();
   let previous: ChatSnapshot | undefined;
+  let previousMain: HTMLElement | null = null;
+  const scheduleRecovery = () => {
+    if (recoveryTimer || stopped) return;
+    recoveryTimer = setTimeout(() => {
+      recoveryTimer = undefined;
+      update();
+    }, 250);
+  };
   function update() {
     clearTimeout(timer);
     timer = undefined;
+    clearTimeout(recoveryTimer);
+    recoveryTimer = undefined;
     if (stopped) return;
-    const next = collectChat(document, getHref());
+    let next: ChatSnapshot;
+    try { next = collectChat(document, getHref()); }
+    catch {
+      // ChatGPT can replace a turn while it is streaming. Keep the last stable
+      // snapshot and retry after the replacement settles instead of losing the
+      // whole workspace until a page reload.
+      scheduleRecovery();
+      return;
+    }
+    const nextMain = activeMain() ?? null;
+    const sameMain = !!previousMain && previousMain === nextMain;
+    const nextIds = new Set(next.answers.map((answer) => answer.id));
+    const missingPreviousAnswer = !!previous && previous.answers.some((answer) => !nextIds.has(answer.id));
+    const becameEmpty = !!previous && previous.answers.length > 0 && next.answers.length === 0;
+    const nativeUiWasPresent = !!previous?.answers.some((answer) => answer.nativeInteractive);
+    const messageBoundaryMissing = !nextMain?.querySelector(SELECTION_MESSAGE);
+    if (sameMain && next.route === previous?.route && nativeUiWasPresent && messageBoundaryMissing && (becameEmpty || missingPreviousAnswer)) {
+      scheduleRecovery();
+      return;
+    }
     const sameAnswers = previous && next.answers.length === previous.answers.length && next.answers.every((answer, index) => {
       const old = previous!.answers[index];
       return answer.id === old.id && answer.stableId === old.stableId && answer.question === old.question && answer.text === old.text && answer.element === old.element && answer.contentElement === old.contentElement && answer.nativeInteractive === old.nativeInteractive;
@@ -90,6 +120,7 @@ export function observeChat(onChange: (snapshot: ChatSnapshot) => void, getHref 
     if (sameAnswers) next.answers = previous!.answers;
     if (sameAnswers && next.route === previous!.route && next.title === previous!.title && next.nativeOverlay === previous!.nativeOverlay) return;
     previous = next;
+    previousMain = nextMain;
     onChange(next);
   }
   const dialogSelector = "dialog[open], [role='dialog'][aria-modal='true']";
@@ -128,7 +159,7 @@ export function observeChat(onChange: (snapshot: ChatSnapshot) => void, getHref 
   window.addEventListener("popstate", update);
   window.addEventListener("hashchange", update);
   update();
-  return () => { stopped = true; observer.disconnect(); clearTimeout(timer); clearInterval(routeTimer); window.removeEventListener("popstate", update); window.removeEventListener("hashchange", update); };
+  return () => { stopped = true; observer.disconnect(); clearTimeout(timer); clearTimeout(recoveryTimer); clearInterval(routeTimer); window.removeEventListener("popstate", update); window.removeEventListener("hashchange", update); };
 }
 
 export function decorateAnswers(answers: NativeAnswer[], enabled: boolean, activeId: string | null): () => void {
@@ -158,8 +189,18 @@ export function createAnswerDecorator() {
   };
 }
 
+function liveAnswerElement(answer: NativeAnswer): HTMLElement | null {
+  const main = activeMain();
+  if (answer.element.isConnected && (!main || main.contains(answer.element))) return answer.element;
+  if (!main) return null;
+  const candidates = [...main.querySelectorAll<HTMLElement>(`${SELECTION_MESSAGE}, [data-message-id], ${SEARCH_UNIT}, [data-turn-id]`)].filter((element) => !element.closest("[hidden], [aria-hidden='true']"));
+  return candidates.find((element) => messageIdentity(element).id === answer.id) ?? null;
+}
+
 export function jumpToAnswer(answer: NativeAnswer): void {
-  answer.element.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+  const target = liveAnswerElement(answer);
+  if (!target) return;
+  target.scrollIntoView({ block: "start", inline: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
 }
 
 export function getAnswerSelection(answers: NativeAnswer[]) {

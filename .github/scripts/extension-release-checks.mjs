@@ -7,7 +7,7 @@ import { resolve } from 'node:path';
 import { test } from 'node:test';
 import { planRelease, prepareRelease, publishRelease, releaseMetadata, verifyArchive } from './extension-release.mjs';
 
-const meta = releaseMetadata({ version: '0.4.0' }, 'a'.repeat(40));
+const meta = releaseMetadata({ version: '0.4.1' }, 'a'.repeat(40));
 const hash = bytes => 'sha256:' + createHash('sha256').update(bytes).digest('hex');
 
 async function fixture(t) {
@@ -58,7 +58,7 @@ function github({ failUpload = false } = {}) {
 }
 
 test('accepts Chrome versions and rejects invalid versions and non-commit targets', () => {
-  assert.equal(meta.tag, 'extension-v0.4.0');
+  assert.equal(meta.tag, 'extension-v0.4.1');
   for (const version of ['0', '0.0.0', '01.2', '1.65536', '1.2.3.4.5', '1.2-beta', '../1.2']) {
     assert.throws(() => releaseMetadata({ version }, meta.sha));
   }
@@ -110,7 +110,7 @@ test('does not publish incomplete assets; resumes the same draft and makes rerun
 
 test('rejects a mismatched ZIP version and tampered build checksums before mutations', async t => {
   const root = await fixture(t);
-  assert.throws(() => verifyArchive(resolve(root, 'artifacts/lattice-chatgpt-extension.zip'), '0.4.1'), /manifest version/);
+  assert.throws(() => verifyArchive(resolve(root, 'artifacts/lattice-chatgpt-extension.zip'), '0.4.2'), /manifest version/);
   await prepareRelease(meta, root);
   await writeFile(resolve(root, 'release/SHA256SUMS'), 'tampered');
   const fake = github();

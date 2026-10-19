@@ -71,6 +71,21 @@ describe("native Intelligent UI isolation", () => {
     expect(publish.mock.calls[1][0].answers[0].text).toContain("actual streamed answer");
   });
 
+  it("keeps the last stable answer while Intelligent UI replaces a streaming turn", async () => {
+    const publish = vi.fn();
+    stop = observeChat(publish);
+    const unit = document.querySelector<HTMLElement>("[data-chatgpt-search-unit-key$=':assistant']")!;
+    const parent = unit.parentElement!;
+    unit.remove();
+    await flush();
+    expect(publish).toHaveBeenCalledOnce();
+
+    parent.append(unit);
+    await flush();
+    expect(publish).toHaveBeenCalledOnce();
+    expect(collectChat().answers[0].text).toContain("The layout experiment is ready.");
+  });
+
   it("deduplicates unchanged messages but still discovers replacements and new turns", async () => {
     const publish = vi.fn();
     stop = observeChat(publish);

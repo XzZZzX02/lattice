@@ -30,7 +30,7 @@ The optional Chrome/Edge extension keeps ChatGPT's native conversation, composer
 citations, files, tools, and conversation branches, and adds Lattice presentation
 and organization. It has no model backend or API-key configuration.
 
-Version 0.4.0 centers on a reference-anchored conversation tree: select a term,
+Version 0.4.1 centers on a reference-anchored conversation tree: select a term,
 continue a native ChatGPT branch in a floating card, and click the underlined
 quote to reopen it. Returning to the main conversation dismisses the card while
 retaining its draft and context. Nested branches, excerpts, notes and mind maps
@@ -42,7 +42,10 @@ system appearance follows the OS. The preference is remembered locally without
 changing ChatGPT's setting.
 Native Intelligent UI can also appear inside a branch card: layouts and DOM/SVG
 controls are mirrored on demand, with actions sent back to the original native
-branch. Main-line indexing continues to ignore widget animation frames.
+branch. Main-line indexing continues to ignore widget animation frames. This
+iteration also anchors sidebar navigation to the beginning of the selected
+native answer and keeps the last stable conversation snapshot while Intelligent
+UI replaces a turn during streaming.
 
 ```bash
 pnpm extension:build
