@@ -16,3 +16,4 @@ diagnostics/
 dist-extension/
 dist-extension-demo/
 artifacts/lattice-chatgpt-extension.zip
+release/

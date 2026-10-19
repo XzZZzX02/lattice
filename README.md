@@ -61,6 +61,24 @@ pnpm extension:dev
 Open `http://127.0.0.1:1421/`. This fixture exercises the same UI and DOM adapter;
 its native menus and extension storage are simulated.
 
+### Automatic extension releases
+
+Update `extension/public/manifest.json` to a new version and push to
+`codex/chatgpt-browser-extension` or `main`. The
+[Release browser extension](.github/workflows/extension-release.yml) workflow runs
+tests, lint, extension type checks, production builds, and bundle verification,
+then creates `extension-v<version>` and publishes a GitHub Release containing
+`lattice-chatgpt-extension-<version>.zip` and `SHA256SUMS`. The ZIP contains only
+runtime files and `INSTALL.md`; `ACCEPTANCE.md` is excluded.
+
+Published versions are skipped and their assets are never overwritten. A failed
+run can be rerun from GitHub Actions; an unfinished draft release at the same
+commit is resumed. Use a new version number for subsequent code updates. Optional
+release notes go in `.github/release-notes/extension-v<version>.md`; otherwise a
+standard description and GitHub's generated change list are used. Only the
+publish job receives `contents: write`, using GitHub's built-in token. No extra
+repository secret is required.
+
 ## macOS input-service diagnostics
 
 On macOS, the development terminal can occasionally print isolated messages such as:

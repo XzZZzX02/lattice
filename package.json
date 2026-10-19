@@ -14,6 +14,7 @@
     "extension:build": "tsc -p extension/tsconfig.json && node extension/build.mjs",
     "extension:dev": "vite --config extension/vite.demo.config.ts",
     "extension:test": "vitest run extension/src",
+    "extension:release:test": "node --test .github/scripts/extension-release-checks.mjs",
     "tauri": "tauri"
   },
   "dependencies": {
