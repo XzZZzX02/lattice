@@ -21,6 +21,11 @@
 .thread-turn { padding-block: 12px; border-bottom: 1px solid var(--tree-line); }
 .lattice .thread-question, .lattice .thread-pending { color: var(--tree-accent); font-size: 13px; font-weight: 550; white-space: pre-wrap; margin-bottom: 10px; }
 .thread-answer { color: var(--tree-text); font-size: 14px; line-height: 1.85; overflow-wrap: anywhere; }
+.native-surface { min-width: 0; width: 100%; margin-block: 8px; }
+.native-surface-frame { display: block; width: 100%; min-width: 0; border: 0; background: transparent; }
+.native-surface-loading, .native-surface-error { color: var(--tree-muted); font-size: 12px; }
+.native-surface-error { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 0; }
+.native-surface-error button { display: flex; align-items: center; gap: 4px; border: 0; background: none; color: var(--tree-accent); white-space: nowrap; }
 .lattice .thread-answer p { margin-block: 8px; }
 .thread-answer h1,.thread-answer h2,.thread-answer h3 { font-size: 15px; margin-block: 12px 6px; }
 .thread-answer ul,.thread-answer ol { padding-left: 22px; }

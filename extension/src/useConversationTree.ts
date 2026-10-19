@@ -17,8 +17,10 @@ export function useConversationTree(snapshot: ChatSnapshot) {
     if (!source.conversationKey) { setCards([]); setLive({}); return; }
     const result = await request({ type: "tree:read", rootKey: source.conversationKey, pageUrl: source.url });
     if (current.current.route !== source.route) return;
-    setCards(result.cards ?? []);
-    setLive(result.live ?? {});
+    const nextCards = result.cards ?? [];
+    const nextLive = result.live ?? {};
+    setCards((previous) => JSON.stringify(previous) === JSON.stringify(nextCards) ? previous : nextCards);
+    setLive((previous) => JSON.stringify(previous) === JSON.stringify(nextLive) ? previous : nextLive);
   }, []);
   useEffect(() => {
     let stopped = false;
@@ -48,6 +50,7 @@ export function useConversationTree(snapshot: ChatSnapshot) {
   async function focus(card: TreeCard) {
     setFocusTarget({ id: card.id, route: snapshot.route });
     await update(card.id, { collapsed: false });
+    if (card.targetKey) await act({ type: "tree:resume", ...root(), id: card.id });
   }
   function dismiss() {
     const card = cards.find((item) => item.id === focusTarget?.id);

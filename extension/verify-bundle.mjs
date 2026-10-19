@@ -156,6 +156,18 @@ async function verifyContent(content, html, answerSelector, question, actionId, 
       observer.disconnect();
       assert.equal(mutations.length, 0, 'Application animation must not cause decoration loops');
       answer.querySelector('#counter').textContent = '42% peak';
+      const readSurface = (request) => new Promise((resolve) => window.chrome.listeners.message({ type: 'native:surface', key: 'chatgpt:bundle-check', messageId, index: 0, ...request }, {}, resolve));
+      const first = await readSurface({});
+      assert.equal(first.ok, true);
+      assert.ok(first.surface.html.includes('GPU Layout Lab'));
+      assert.ok(first.surface.html.includes('type="range"'));
+      assert.ok(!first.surface.html.includes('<script'));
+      const mirrored = new window.DOMParser().parseFromString(first.surface.html, 'text/html');
+      const clicked = await readSurface({ action: { id: 'bundle-widget-click', session: first.surface.session, target: mirrored.querySelector('#tile').dataset.latticeNode, type: 'click' } });
+      assert.equal(clicked.ok, true);
+      assert.equal(tileClicks, 2, 'Card controls must call the original native handler once');
+      const unchanged = await readSurface({ session: clicked.surface.session, revision: clicked.surface.revision });
+      assert.equal(unchanged.surface, undefined, 'Unchanged widgets must not resend HTML');
     }
     nativeAction.click();
     assert.equal(nativeClicks, 1);
@@ -200,5 +212,5 @@ export async function verifyExtensionBundle(directory) {
   });
   assert.equal(result.ok, true);
   assert.deepEqual([...result.presentation.favorites], ["message:answer-one"]);
-  console.log("Built extension verified without Node globals (four-option theme dropdown and OS appearance sync, legacy/current/Intelligent UI DOM, native widget animation isolation, quote click, floating tree, main-line dismissal, graphs, native controls, service worker).");
+  console.log("Built extension verified without Node globals (four-option theme dropdown and OS appearance sync, legacy/current/Intelligent UI DOM, native widget animation isolation and interactive relay, quote click, floating tree, main-line dismissal, graphs, native controls, service worker).");
 }

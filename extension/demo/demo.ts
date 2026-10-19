@@ -4,6 +4,8 @@ import type { ExtensionPlatform, StorageArea } from "../src/platform";
 import type { BranchLink, ExtensionMessage, PendingBranch } from "../src/types";
 import nativeStyles from "../public/native.css?inline";
 import { createTreeCoordinator } from "../src/tree-background";
+import { createDemoLab } from "./native-lab";
+import { createSurfaceBridge } from "../src/native-surface";
 import { collectChat } from "../src/host";
 import { projectMarkdown } from "../src/native-relay";
 import type { NativeReport, TreeMessage } from "../src/tree-types";
@@ -22,6 +24,8 @@ const storage: StorageArea = {
 let pending: PendingBranch | null = null;
 const virtualTabs = new Map<number, NativeReport>();
 const virtualHistory = new Map<string, NativeReport>(JSON.parse(sessionStorage.getItem("lattice-demo-native-history") || "[]"));
+const surfaces = new Map<number, Map<string, HTMLElement>>();
+const bridges = new Map<number, ReturnType<typeof createSurfaceBridge>>();
 let nextTab = 10;
 const api: ExtensionPlatform = {
   storage: { local: storage, session: storage, onChanged: { addListener: (listener) => { listeners.add(listener); }, removeListener: (listener) => { listeners.delete(listener); } } },
@@ -62,9 +66,14 @@ const api: ExtensionPlatform = {
       const saved = virtualHistory.get(clean);
       const snapshot = collectChat(document, "https://chatgpt.com/c/demo-main");
       virtualTabs.set(id, saved ? structuredClone(saved) : { url: clean, key: snapshot.conversationKey, title: snapshot.title, generating: false, composerReady: true, answers: snapshot.answers.map((answer) => ({ id: answer.id, question: answer.question, text: answer.text, markdown: projectMarkdown(answer.contentElement) })) });
+      const nodes = new Map<string, HTMLElement>();
+      for (const answer of virtualTabs.get(id)!.answers) if (answer.content?.some((part) => part.type === 'native')) nodes.set(answer.id, createDemoLab(answer.id));
+      surfaces.set(id, nodes);
+      bridges.set(id, createSurfaceBridge((messageId) => nodes.get(messageId), () => virtualTabs.get(id)?.key ?? null));
       setTimeout(() => void simulateNative(id), 250);
       return { id };
     },
+    sendMessage: async (id, message) => bridges.get(id)?.read(message) ?? { ok: false, error: "模拟源界面尚未加载" },
     get: async (id) => { if (!virtualTabs.has(id)) throw new Error("Demo tab closed"); return { id }; },
     update: async (id) => ({ id })
   }
@@ -85,7 +94,10 @@ async function simulateNative(id: number) {
       report.title = "本地模拟支线";
     } else {
       const text = `这是本地模拟回答，不是模型生成。\n\n本支线保留 ${report.answers.length} 条此前的回答。${report.answers.length > 1 ? `上一轮问题是：“${report.answers.at(-1)!.question.slice(-80)}”。` : "KV Cache 可理解为保留已有计算结果的书签，后续生成复用历史 Key/Value。"}\n\n你可以在卡片继续问、收起后再展开，或从本回答创建子支线；主线不会新增这些问题。`;
-      report.answers.push({ id: `message:${crypto.randomUUID()}`, question: command.text!, text, markdown: text });
+      const messageId = `message:${crypto.randomUUID()}`;
+      const interactive = /交互|intelligen|实验|面板/i.test(command.text!);
+      if (interactive) surfaces.get(id)!.set(messageId, createDemoLab(messageId));
+      report.answers.push({ id: messageId, question: command.text!, text, markdown: text, ...(interactive ? { content: [{ type: 'markdown' as const, markdown: '这是本地模拟的交互回答，布局和控件由模拟原生分支提供。' }, { type: 'native' as const, index: 0, label: 'GPU 布局实验室' }, { type: 'markdown' as const, markdown: '你可以继续在此支线提问，返回主线后状态保留。' }] } : {}) });
     }
     virtualHistory.set(report.url, structuredClone(report));
     sessionStorage.setItem("lattice-demo-native-history", JSON.stringify([...virtualHistory]));

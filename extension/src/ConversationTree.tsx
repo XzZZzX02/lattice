@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ArrowLeft, ChevronRight, ExternalLink, GitBranch, Send, X } from "lucide-react";
+import { ArrowLeft, ChevronRight, ExternalLink, GitBranch, Maximize2, Minimize2, Send, X } from "lucide-react";
 import { selectionFromContainer } from "../../src/lib/selection";
 import type { ChatSnapshot, Excerpt } from "./types";
 import { type RemoteTurn, type TreeCard, type TreeLive } from "./tree-types";
@@ -10,6 +10,7 @@ import { positionTreeCard } from "./tree-floating";
 import { jumpToAnswer } from "./host";
 import treeStyles from "./tree.css?inline";
 import { useConversationTree } from "./useConversationTree";
+import { NativeSurface } from "./NativeSurface";
 
 type TreeActions = ReturnType<typeof useConversationTree>;
 const labels: Record<TreeLive["phase"], string> = { preparing: "正在加载分支起点", forking: "正在创建原生分支", loading: "正在恢复支线上下文", sending: "正在发送到原生分支", waiting: "ChatGPT 正在回答", ready: "上下文已保存在原生分支", error: "需要检查原生页面" };
@@ -25,7 +26,7 @@ function ancestry(card: TreeCard, cards: TreeCard[]) {
   return chain;
 }
 
-function ThreadCard({ card, tree }: { card: TreeCard; tree: TreeActions }) {
+function ThreadCard({ card, tree, pageUrl, expanded, expand }: { card: TreeCard; tree: TreeActions; pageUrl: string; expanded: boolean; expand: () => void }) {
   const state = tree.live[card.id];
   const busy = !!state && !["ready", "error"].includes(state.phase);
   const [submitting, setSubmitting] = useState(false);
@@ -53,7 +54,10 @@ function ThreadCard({ card, tree }: { card: TreeCard; tree: TreeActions }) {
   // DOM is detached so returning to the main line never loses a draft.
   useLayoutEffect(() => () => { clearTimeout(timer.current); persist.current(); }, []);
   useLayoutEffect(() => {
-    if (follow.current && history.current) history.current.scrollTop = history.current.scrollHeight;
+    if (!follow.current || !history.current) return;
+    const native = turns.at(-1)?.content?.some((part) => part.type === "native");
+    const last = history.current.querySelector<HTMLElement>(".thread-turn:last-of-type");
+    history.current.scrollTop = native && last ? last.offsetTop - history.current.offsetTop : history.current.scrollHeight;
   }, [turns, state?.pending]);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -82,6 +86,7 @@ function ThreadCard({ card, tree }: { card: TreeCard; tree: TreeActions }) {
     </nav>
     <header className="thread-header">
       <GitBranch size={15} /><strong>{card.label}</strong><span>{turns.length ? `${turns.length} 轮` : card.targetKey ? "已保存" : "新支线"}</span>
+      {turns.some((turn) => turn.content?.some((part) => part.type === "native")) && <button className="icon-button" aria-label={expanded ? "收窄支线卡片" : "展开支线卡片"} onClick={expand}>{expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}</button>}
       <button className="icon-button" title="打开原生分支，使用文件、引用和工具" aria-label={`打开原生分支：${card.label}`} onClick={() => void tree.open(card)}><ExternalLink size={14} /></button>
       <button className="icon-button" aria-label={`收起支线：${card.label}`} title="回到主线时也会自动收起" onClick={tree.dismiss}><X size={16} /></button>
     </header>
@@ -96,7 +101,7 @@ function ThreadCard({ card, tree }: { card: TreeCard; tree: TreeActions }) {
           const resolved = selectionFromContainer(event.currentTarget, "", selection);
           if (resolved) setSelected({ id: turn.id, anchor: { id: crypto.randomUUID(), messageId: turn.id, text: resolved.text, startOffset: resolved.renderedStartOffset, endOffset: resolved.renderedEndOffset, note: "", createdAt: new Date().toISOString() } });
         }}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ children, ...props }) => <a {...props} target="_blank" rel="noreferrer">{children}</a> }}>{turn.markdown || turn.text || "正在生成…"}</ReactMarkdown>
+          {(turn.content ?? [{ type: "markdown" as const, markdown: turn.markdown || turn.text || "正在生成…" }]).map((part, index) => part.type === "native" ? <NativeSurface key={`native-${part.index}`} card={card} pageUrl={pageUrl} messageId={turn.id} index={part.index} label={part.label} dismiss={tree.dismiss} select={(text) => setSelected({ id: turn.id, anchor: { id: crypto.randomUUID(), messageId: turn.id, text, startOffset: 0, endOffset: text.length, note: "", createdAt: new Date().toISOString() } })} /> : <ReactMarkdown key={index} remarkPlugins={[remarkGfm]} components={{ a: ({ children, ...props }) => <a {...props} target="_blank" rel="noreferrer">{children}</a> }}>{part.markdown}</ReactMarkdown>)}
         </div>
         <button className="thread-child-button" disabled={!card.targetKey || busy} onClick={(event) => child(turn, event.currentTarget.previousElementSibling as HTMLElement)}><GitBranch size={13} />{selected?.id === turn.id ? `追问「${selected.anchor.text.slice(0, 20)}」` : "从这条回答展开子支线"}</button>
         <div className="thread-child-links">{tree.cards.filter((item) => item.parentId === card.id && item.sourceMessageId === turn.id).map((item) => <button key={item.id} onClick={() => void tree.focus(item)}><GitBranch size={11} />{item.label}</button>)}</div>
@@ -119,6 +124,7 @@ export function FloatingConversationTree({ snapshot, tree, hidden }: { snapshot:
   const surface = useRef<HTMLElement>(null);
   const references = useRef<TreeReference[]>([]);
   const actions = useRef(tree);
+  const [expanded, setExpanded] = useState(false);
   const [position, setPosition] = useState(() => positionTreeCard({ left: innerWidth / 2, right: innerWidth / 2, top: 160, bottom: 180 }, { width: innerWidth, height: innerHeight }));
   const card = tree.cards.find((item) => item.id === tree.focusTarget?.id);
   const rootCard = card ? ancestry(card, tree.cards)[0] : undefined;
@@ -150,7 +156,8 @@ export function FloatingConversationTree({ snapshot, tree, hidden }: { snapshot:
       const panelRect = panel?.getBoundingClientRect();
       const right = innerWidth >= 1180 && panelRect && panelRect.width && getComputedStyle(panel!).display !== "none" ? panelRect.left - 12 : innerWidth;
       const anchor = reference && referenceRect(reference) || { left: innerWidth / 2, right: innerWidth / 2, top: 160, bottom: 180 };
-      const next = positionTreeCard(anchor, { width: innerWidth, height: innerHeight, right }, surface.current?.getBoundingClientRect().height || undefined);
+      const next = positionTreeCard(anchor, { width: innerWidth, height: innerHeight, right }, surface.current?.getBoundingClientRect().height || undefined, expanded ? 900 : card?.id && tree.live[card.id]?.turns.some((turn) => turn.content?.some((part) => part.type === "native")) ? 680 : 420);
+      if (expanded) { next.top = 12; next.maxHeight = innerHeight - 24; }
       setPosition((previous) => Object.keys(next).every((key) => previous[key as keyof typeof next] === next[key as keyof typeof next]) ? previous : next);
     }
     place();
@@ -159,7 +166,7 @@ export function FloatingConversationTree({ snapshot, tree, hidden }: { snapshot:
     document.addEventListener("scroll", place, true);
     window.addEventListener("resize", place);
     return () => { observer?.disconnect(); document.removeEventListener("scroll", place, true); window.removeEventListener("resize", place); };
-  }, [tree.focusTarget, cardId, rootId, sourceMessageId, snapshot.answers, hidden]);
+  }, [tree.focusTarget, cardId, rootId, sourceMessageId, snapshot.answers, hidden, expanded, card?.id, tree.live]);
   useLayoutEffect(() => { if (cardId && !hidden) surface.current?.focus({ preventScroll: true }); }, [tree.focusTarget, cardId, hidden]);
 
   useEffect(() => {
@@ -174,5 +181,5 @@ export function FloatingConversationTree({ snapshot, tree, hidden }: { snapshot:
     return () => { document.removeEventListener("pointerdown", outside, true); document.removeEventListener("focusin", outside, true); document.removeEventListener("wheel", outside, true); document.removeEventListener("touchstart", outside, true); window.removeEventListener("keydown", key, true); };
   }, [cardId]);
 
-  return <><style>{treeStyles}</style>{card && !hidden && <section ref={surface} className="floating-tree" data-lattice-tree-host="" role="dialog" aria-modal="false" aria-label={`悬浮支线：${card.label}`} tabIndex={-1} style={position}><ThreadCard key={card.id} card={card} tree={tree} /></section>}</>;
+  return <><style>{treeStyles}</style>{card && !hidden && <section ref={surface} className="floating-tree" data-lattice-tree-host="" role="dialog" aria-modal="false" aria-label={`悬浮支线：${card.label}`} tabIndex={-1} style={position}><ThreadCard key={card.id} card={card} tree={tree} pageUrl={snapshot.url} expanded={expanded} expand={() => setExpanded(!expanded)} /></section>}</>;
 }

@@ -7,12 +7,13 @@ export interface StorageArea {
 }
 
 export interface Tab { id?: number; openerTabId?: number; active?: boolean }
-interface MessageSender { tab?: Tab; url?: string }
+interface MessageSender { tab?: Tab; url?: string; id?: string }
 type MessageListener = (message: ExtensionMessage, sender: MessageSender, respond: (value: ExtensionResponse) => void) => boolean | void;
 type StorageListener = (changes: Record<string, { newValue?: unknown; oldValue?: unknown }>, area: string) => void;
 
 export interface ExtensionPlatform {
   runtime: {
+    id?: string;
     sendMessage(message: ExtensionMessage): Promise<ExtensionResponse>;
     onMessage: { addListener(listener: MessageListener): void };
   };
@@ -26,6 +27,7 @@ export interface ExtensionPlatform {
     create?(properties: { url: string; active: boolean }): Promise<Tab>;
     get?(id: number): Promise<Tab>;
     update?(id: number, properties: { active?: boolean; autoDiscardable?: boolean }): Promise<Tab>;
+    sendMessage?(id: number, message: import("./tree-types").SurfaceRequest, options?: { frameId: number }): Promise<ExtensionResponse>;
   };
 }
 

@@ -2,6 +2,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionPlatform, StorageArea } from "./platform";
 import type { BranchLink, ExtensionMessage, ExtensionResponse, PendingBranch, Presentation } from "./types";
 import { BRANCHES_KEY, BRANCH_TTL, presentationKey } from "./presentation";
+import { TREE_KEY, WORKERS_KEY } from "./tree-types";
 
 type MessageListener = Parameters<ExtensionPlatform["runtime"]["onMessage"]["addListener"]>[0];
 type TabListener = Parameters<ExtensionPlatform["tabs"]["onCreated"]["addListener"]>[0];
@@ -37,6 +38,20 @@ async function arm() {
 }
 
 describe("extension background coordination", () => {
+  it("keeps persistence responsive while a native surface is waiting on another tab", async () => {
+    const native = { id: 'message:ui', question: 'Lab', text: '[原生交互内容]', markdown: '', content: [{ type: 'native', index: 0, label: 'Lab' }] };
+    local[TREE_KEY] = [{ id: 'card', rootKey: 'chatgpt:source', sourceKey: 'chatgpt:source', sourceUrl: source, sourceMessageId: 'message:a', targetKey: 'chatgpt:branch' }];
+    session[WORKERS_KEY] = [{ cardId: 'card', tabId: 2, ownerTabId: 1, lastKey: 'chatgpt:branch', live: { phase: 'ready', turns: [native], updatedAt: 0 } }];
+    let release!: (value: ExtensionResponse) => void;
+    const forward = vi.fn(() => new Promise<ExtensionResponse>((resolve) => { release = resolve; }));
+    (globalThis as typeof globalThis & { chrome: ExtensionPlatform }).chrome.tabs.sendMessage = forward;
+    const pending = send({ type: 'tree:surface', rootKey: 'chatgpt:source', pageUrl: source, id: 'card', messageId: native.id, index: 0 });
+    await vi.waitFor(() => expect(forward).toHaveBeenCalledOnce());
+    const saved = await send({ type: 'presentation:mutate', key: 'chatgpt:source', mutation: { type: 'favorite', messageId: 'a', favorite: true } });
+    expect(saved.ok).toBe(true);
+    release({ ok: true });
+    expect((await pending).ok).toBe(true);
+  });
   it("serializes changes from two tabs to avoid losing organization", async () => {
     await Promise.all([
       send({ type: "presentation:mutate", key: "chatgpt:source", mutation: { type: "favorite", messageId: "a", favorite: true } }, 1),

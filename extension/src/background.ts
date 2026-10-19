@@ -29,7 +29,9 @@ api.tabs.onCreated.addListener((tab) => {
 api.runtime.onMessage.addListener((message, sender, respond) => {
   if (!sender.url || new URL(sender.url).origin !== "https://chatgpt.com" || sender.tab?.id === undefined) return;
   const tabId = sender.tab.id;
-  void serialize(() => handleMessage(message, tabId, sender.url!)).then(respond, () => respond({ ok: false, error: "无法保存本地整理，请刷新页面后重试。" }));
+  // A sleeping native tab must not hold the persistence/command queue hostage.
+  const work = message.type === "tree:surface" ? handleMessage(message, tabId, sender.url) : serialize(() => handleMessage(message, tabId, sender.url!));
+  void work.then(respond, () => respond({ ok: false, error: "无法保存本地整理，请刷新页面后重试。" }));
   return true;
 });
 

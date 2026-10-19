@@ -18,7 +18,11 @@ export interface TreeCard {
   targetUrl?: string;
   inheritedTurns?: number;
 }
-export interface RemoteTurn { id: string; question: string; text: string; markdown: string }
+export type AnswerPart = { type: "markdown"; markdown: string } | { type: "native"; index: number; label: string };
+export interface RemoteTurn { id: string; question: string; text: string; markdown: string; content?: AnswerPart[] }
+export interface SurfaceAction { id: string; session: string; target: string; type: "click" | "input" | "change" | "keydown"; value?: string; key?: string; x?: number; y?: number; createdAt?: number }
+export interface SurfaceSnapshot { session: string; revision: number; html: string; css: string; stylesheets: string[]; rootClass: string; dir: string; height: number }
+export interface SurfaceRequest { type: "native:surface"; key: string; messageId: string; index: number; revision?: number; session?: string; action?: SurfaceAction }
 export interface TreeLive {
   phase: "preparing" | "forking" | "loading" | "sending" | "waiting" | "ready" | "error";
   turns: RemoteTurn[];
@@ -35,6 +39,8 @@ export type TreeMessage =
   | { type: "tree:send"; rootKey: string; pageUrl: string; id: string; text: string }
   | { type: "tree:resume"; rootKey: string; pageUrl: string; id: string }
   | { type: "tree:open"; rootKey: string; pageUrl: string; id: string }
+  | { type: "tree:surface"; rootKey: string; pageUrl: string; id: string; messageId: string; index: number; revision?: number; session?: string; action?: SurfaceAction }
+  | SurfaceRequest
   | { type: "native:hello" }
   | { type: "native:report"; report: NativeReport }
   | { type: "native:ack"; commandId: string; error?: string };
@@ -44,4 +50,5 @@ export interface TreeResult {
   cardId?: string;
   managed?: boolean;
   command?: NativeCommand;
+  surface?: SurfaceSnapshot;
 }

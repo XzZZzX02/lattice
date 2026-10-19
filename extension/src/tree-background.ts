@@ -122,6 +122,7 @@ export function createTreeCoordinator(api: ExtensionPlatform) {
       if (tab.active) await api.tabs.update?.(parent.ownerTabId, { active: true }).catch(() => undefined);
     },
     async handle(message: TreeMessage, tabId: number): Promise<ExtensionResponse> {
+      if (message.type === "native:surface") return { ok: false, error: "交互请求必须来自主线卡片。" };
       const all = await workers();
       if (message.type === "native:hello") return { ok: true, managed: all.some((item) => item.tabId === tabId) };
       if (message.type === "native:report" || message.type === "native:ack") {
@@ -157,6 +158,21 @@ export function createTreeCoordinator(api: ExtensionPlatform) {
       }
       const card = family.find((item) => item.id === message.id);
       if (!card) return { ok: false, error: "找不到这条支线，请重新打开主线。" };
+      if (message.type === "tree:surface") {
+        const worker = all.find((item) => item.cardId === card.id);
+        if (!worker || !card.targetKey || worker.lastKey !== card.targetKey) return { ok: false, error: "正在恢复原生交互内容…" };
+        const turn = worker.live.turns.find((item) => item.id === message.messageId);
+        if (!turn?.content?.some((part) => part.type === "native" && part.index === message.index)) return { ok: false, error: "原生回答尚未同步，请稍候。" };
+        if (!api.tabs.sendMessage || worker.tabId === tabId) return { ok: false, error: "无法连接此支线的交互界面。" };
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          return await Promise.race([
+            api.tabs.sendMessage(worker.tabId, { type: "native:surface", key: card.targetKey, messageId: message.messageId, index: message.index, revision: message.revision, session: message.session, ...(message.action ? { action: message.action } : {}) }, { frameId: 0 }),
+            new Promise<ExtensionResponse>((resolve) => { timer = setTimeout(() => resolve({ ok: false, error: "原生界面暂未响应，请稍后重试同步。" }), 5000); })
+          ]);
+        } catch { return { ok: false, error: "原生页面正在加载，请稍候或重新展开卡片。" }; }
+        finally { clearTimeout(timer); }
+      }
       if (message.type === "tree:update") {
         if (message.collapsed !== undefined) card.collapsed = message.collapsed;
         if (message.draft !== undefined) card.draft = message.draft.slice(0, 20_000);
@@ -170,10 +186,14 @@ export function createTreeCoordinator(api: ExtensionPlatform) {
         const prompt = !card.targetKey && card.anchor ? `关于原回答中的「${card.anchor.text}」，我的问题是：\n${text}` : text;
         await start(card, tabId, prompt);
       } else if (message.type === "tree:resume" && card.targetKey) {
-        if (!all.some((worker) => worker.cardId === card.id)) await start(card, tabId);
+        const worker = all.find((item) => item.cardId === card.id);
+        if (!worker || api.tabs.get && !await api.tabs.get(worker.tabId).catch(() => null)) {
+          if (worker) await saveWorkers(all.filter((item) => item !== worker));
+          await start(card, tabId);
+        }
       } else if (message.type === "tree:open") {
         const worker = all.find((item) => item.cardId === card.id);
-        if (worker && api.tabs.update) await api.tabs.update(worker.tabId, { active: true });
+        if (worker && api.tabs.update && (!api.tabs.get || await api.tabs.get(worker.tabId).catch(() => null))) await api.tabs.update(worker.tabId, { active: true });
         else await api.tabs.create?.({ url: card.targetUrl || card.sourceUrl, active: true });
       }
       return { ok: true };

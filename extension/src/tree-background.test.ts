@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createTreeCoordinator } from "./tree-background";
 import type { ExtensionPlatform, StorageArea } from "./platform";
 import { TREE_KEY, WORKERS_KEY, type NativeReport, type TreeCard } from "./tree-types";
@@ -116,5 +116,31 @@ describe("context-bearing conversation tree", () => {
     expect(fork.ok && fork.command?.type).toBe("fork");
     const again = await tree.handle({ type: "native:report", report: report() }, 11);
     expect(again.ok && again.command).toBeUndefined();
+  });
+});
+
+describe('native surface routing', () => {
+  it('binds actions to a real answer in the correct branch without storing HTML', async () => {
+    const id = await create(); await ready(id);
+    const native = { id: 'message:ui', question: 'Native application', text: '[原生交互内容]', markdown: '', content: [{ type: 'native' as const, index: 0, label: 'Lab' }] };
+    await tree.handle({ type: 'native:report', report: report('https://chatgpt.com/c/branch', [turn, native]) }, 11);
+    const surface = { session: 's', revision: 1, html: '<button>Native control</button>', css: '', stylesheets: [], rootClass: '', dir: 'ltr', height: 200 };
+    api.tabs.sendMessage = vi.fn(async () => ({ ok: true as const, surface }));
+    const message = { type: 'tree:surface' as const, ...root, id, messageId: native.id, index: 0 };
+    expect(await tree.handle(message, 1)).toEqual({ ok: true, surface });
+    expect(api.tabs.sendMessage).toHaveBeenCalledWith(11, expect.objectContaining({ type: 'native:surface', key: 'chatgpt:branch', messageId: native.id }), { frameId: 0 });
+    expect((await tree.handle({ ...message, messageId: turn.id }, 1)).ok).toBe(false);
+    expect((await tree.handle({ ...message, pageUrl: 'https://chatgpt.com/c/other' }, 1)).ok).toBe(false);
+    expect(api.tabs.sendMessage).toHaveBeenCalledOnce();
+    expect(JSON.stringify(temporary)).not.toContain('Native control');
+  });
+  it('recovers a closed native tab without replaying its prior prompt', async () => {
+    const id = await create(); await ready(id);
+    api.tabs.get = async () => { throw new Error('Closed tab'); };
+    await tree.handle({ type: 'tree:resume', ...root, id }, 1);
+    expect(opened).toHaveLength(2);
+    expect(opened[1].url).toContain('/c/branch#lattice-worker=');
+    const restored = await tree.handle({ type: 'native:report', report: report('https://chatgpt.com/c/branch', [turn, { ...turn, id: 'message:b' }]) }, 12);
+    expect(restored.ok && restored.command).toBeUndefined();
   });
 });

@@ -1,8 +1,9 @@
 import { activeMain, collectChat, findNativeBranchAction } from "./host";
 import { conversationKey } from "./presentation";
 import { request } from "./platform";
-import type { NativeReport } from "./tree-types";
+import type { AnswerPart, NativeReport } from "./tree-types";
 import { NATIVE_INTERACTIVE } from "./native-content";
+import { startSurfaceRelay } from "./native-surface";
 
 function visible(element: HTMLElement): boolean {
   if (element.closest("[hidden], [aria-hidden='true'], [data-app-shell-active-page='false']")) return false;
@@ -26,12 +27,12 @@ export function nativeComposer(): HTMLElement | null {
 
 // A read-only projection of visible content. ReactMarkdown will render this
 // without raw HTML. Native rich tools, approvals and files stay in their tab.
-export function projectMarkdown(element: HTMLElement): string {
+export function projectMarkdown(element: HTMLElement, interactive: (node: HTMLElement) => string = () => "\n\n[原生交互内容]\n\n"): string {
   const escape = (text: string) => text.replace(/([\\`*_[\]<>])/g, "\\$1");
   function visit(node: Node): string {
     if (node.nodeType === Node.TEXT_NODE) return escape(node.textContent ?? "");
     if (!(node instanceof HTMLElement)) return "";
-    if (node.matches(NATIVE_INTERACTIVE)) return "\n\n交互内容请打开原生分支查看和操作。\n\n";
+    if (node.matches(NATIVE_INTERACTIVE)) return interactive(node);
     if (node.matches("script, style, button, input, textarea, iframe, svg, [hidden], [aria-hidden='true']")) return "";
     const text = [...node.childNodes].map(visit).join("");
     if (node.tagName === "PRE") return `\n\n\`\`\`\n${node.textContent ?? ""}\n\`\`\`\n\n`;
@@ -51,9 +52,33 @@ export function projectMarkdown(element: HTMLElement): string {
   return visit(element).replace(/\n{3,}/g, "\n\n").trim();
 }
 
+export function projectContent(element: HTMLElement): AnswerPart[] | undefined {
+  const parts: AnswerPart[] = [];
+  const surfaces: Extract<AnswerPart, { type: "native" }>[] = [];
+  const token = `lattice-${crypto.randomUUID()}`;
+  const markdown = projectMarkdown(element, (node) => {
+    const index = surfaces.length;
+    surfaces.push({ type: "native", index, label: node.getAttribute("aria-label") || node.querySelector("h1,h2,h3")?.textContent?.trim().slice(0, 80) || "原生交互内容" });
+    return `\n\n${token}:${index}\n\n`;
+  });
+  if (!surfaces.length) return;
+  let offset = 0;
+  for (const surface of surfaces) {
+    const marker = `${token}:${surface.index}`;
+    const position = markdown.indexOf(marker, offset);
+    const before = markdown.slice(offset, position).trim();
+    if (before) parts.push({ type: "markdown", markdown: before });
+    parts.push(surface);
+    offset = position + marker.length;
+  }
+  const after = markdown.slice(offset).trim();
+  if (after) parts.push({ type: "markdown", markdown: after });
+  return parts;
+}
+
 export function nativeReport(): NativeReport {
   const snapshot = collectChat();
-  return { url: snapshot.url, key: snapshot.conversationKey, title: snapshot.title, generating: generating(), composerReady: !!nativeComposer() && !snapshot.nativeOverlay, answers: snapshot.answers.map((answer) => ({ id: answer.id, question: answer.question, text: answer.text, markdown: projectMarkdown(answer.contentElement) })) };
+  return { url: snapshot.url, key: snapshot.conversationKey, title: snapshot.title, generating: generating(), composerReady: !!nativeComposer() && !snapshot.nativeOverlay, answers: snapshot.answers.map((answer) => ({ id: answer.id, question: answer.question, text: answer.text, markdown: projectMarkdown(answer.contentElement), ...(answer.nativeInteractive ? { content: projectContent(answer.contentElement) } : {}) })) };
 }
 
 export async function sendNativePrompt(key: string, text: string, route?: string): Promise<void> {
@@ -90,6 +115,7 @@ export async function sendNativePrompt(key: string, text: string, route?: string
 }
 
 export function startNativeRelay() {
+  startSurfaceRelay();
   let stopped = false;
   let timer: ReturnType<typeof setTimeout>;
   let managed = false;

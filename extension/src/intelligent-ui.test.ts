@@ -21,7 +21,7 @@ describe("native Intelligent UI isolation", () => {
     expect(answer.text).toContain(INTERACTIVE_TEXT);
     expect(answer.text).not.toContain("42% peak");
     expect(innerText).not.toHaveBeenCalled();
-    expect(projectMarkdown(answer.contentElement)).toContain("交互内容请打开原生分支");
+    expect(projectMarkdown(answer.contentElement)).toContain("[原生交互内容]");
   });
 
   it("keeps native controls and geometry attributes untouched during repeated decoration", async () => {

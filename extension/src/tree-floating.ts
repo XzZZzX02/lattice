@@ -1,10 +1,10 @@
 import type { SelectionAnchor } from "../../src/lib/floating";
 
-export function positionTreeCard(anchor: SelectionAnchor, viewport: { width: number; height: number; right?: number }, measuredHeight = 460) {
+export function positionTreeCard(anchor: SelectionAnchor, viewport: { width: number; height: number; right?: number }, measuredHeight = 460, preferredWidth = 420) {
   const margin = 12;
   const gap = 12;
   const right = Math.min(viewport.width, Math.max(Math.min(margin + 240, viewport.width), viewport.right ?? viewport.width));
-  const width = Math.max(0, Math.min(420, right - margin * 2));
+  const width = Math.max(0, Math.min(preferredWidth, right - margin * 2));
   let maxHeight = Math.max(0, Math.min(560, viewport.height - margin * 2));
   const height = Math.min(measuredHeight, maxHeight);
   const clampX = (left: number) => Math.max(margin, Math.min(left, right - width - margin));
