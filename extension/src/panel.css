@@ -71,12 +71,17 @@
 .lattice .brand-mark svg { width: 100%; height: 100%; fill: var(--bg); stroke: currentColor; stroke-width: 1.5; }
 .lattice .launcher { position: fixed; top: 16px; right: 16px; display: flex; align-items: center; gap: 9px; min-height: 42px; border: 1px solid var(--line-strong); border-radius: 11px; padding: 8px 13px; background: var(--bg); box-shadow: 0 4px 20px #0003; font-family: ui-monospace, monospace; font-weight: 600; z-index: 1; }
 .lattice .launcher.is-open { visibility: hidden; }
-.lattice .panel { position: fixed; top: 12px; right: 12px; bottom: 12px; width: 340px; max-width: calc(100vw - 24px); display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); box-shadow: var(--panel-shadow); overflow: hidden; }
-.lattice .panel.wide { width: min(820px, calc(100vw - 24px)); }
+.lattice .panel { position: fixed; top: 12px; right: 12px; bottom: 12px; width: 340px; max-width: calc(100% - 24px); display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 16px; background: var(--bg); box-shadow: var(--panel-shadow); overflow: hidden; }
+.lattice .panel.compact { top: 8px; right: 8px; bottom: 8px; max-width: calc(100% - 16px); }
+.lattice .panel-resize-handle { position: absolute; inset: 0 auto 0 0; width: 8px; z-index: 10; cursor: ew-resize; touch-action: none; }
+.lattice .panel-resize-handle::after { content: ""; position: absolute; left: 1px; top: 16px; bottom: 16px; width: 2px; border-radius: 2px; background: transparent; }
+.lattice .panel-resize-handle:hover::after, .lattice .panel-resize-handle:focus-visible::after, .lattice .panel.is-resizing .panel-resize-handle::after { background: var(--accent); }
+.lattice .panel-resize-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.lattice .panel.is-resizing, .lattice .panel.is-resizing * { cursor: ew-resize; user-select: none; }
 .lattice .panel-header { position: relative; z-index: 6; display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--line); }
-.lattice .brand { display: flex; align-items: center; gap: 8px; }
+.lattice .brand { display: flex; min-width: 0; align-items: center; gap: 8px; }
 .lattice .brand strong { font-family: ui-monospace, monospace; font-size: 15px; letter-spacing: -.3px; }
-.lattice .brand > span:last-child { color: var(--muted); font-size: 11px; padding-left: 2px; }
+.lattice .brand > span:last-child { color: var(--muted); font-size: 11px; padding-left: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lattice .icon-button { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); padding: 5px; vertical-align: middle; }
 .lattice .icon-button:hover { color: var(--text); background: var(--hover); }
 .lattice .conversation-heading { padding: 20px 20px 16px; }
@@ -84,11 +89,12 @@
 .lattice .conversation-heading h1 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-block: 9px 7px; font-size: 19px; line-height: 1.55; font-weight: 600; letter-spacing: -.3px; }
 .lattice .conversation-heading p { color: var(--muted); font-size: 10px; }
 .lattice .conversation-heading p > span { padding-inline: 5px; }
-.lattice .tabs { display: flex; gap: 4px; margin-inline: 16px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
-.lattice .tabs > button { display: flex; flex: 1; gap: 6px; align-items: center; justify-content: center; min-height: 36px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 12px; }
+.lattice .tabs { display: flex; gap: 2px; margin-inline: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.lattice .tabs > button { display: flex; flex: 1; min-width: 0; gap: 4px; align-items: center; justify-content: center; min-height: 36px; padding: 6px 3px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.lattice .tabs > button > svg { width: 13px; height: 13px; flex-shrink: 0; }
 .lattice .tabs > button[aria-current] { color: var(--accent); background: var(--accent-bg); }
 .lattice .tabs > button > span { color: var(--soft); font: 10px ui-monospace, monospace; }
-.lattice .panel-body { flex: 1; min-height: 0; overflow: auto; padding: 16px; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+.lattice .panel-body { flex: 1; min-height: 0; min-width: 0; overflow: auto; padding: 16px; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
 .lattice .answer-tools { display: flex; gap: 8px; margin-bottom: 16px; }
 .lattice .search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); }
 .lattice .search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 12px; }
@@ -171,7 +177,7 @@
 .lattice .link-branch form > p { font-size: 11px; color: var(--muted); margin-bottom: 10px; }
 .lattice .link-branch label { display: grid; gap: 5px; margin-block: 10px; color: var(--muted); font-size: 11px; }
 .lattice .link-branch input, .lattice .link-branch select { min-width: 0; width: 100%; padding: 7px; border: 1px solid var(--line); border-radius: 6px; color: var(--text); background: var(--bg); }
-@media (max-width: 640px) { .lattice .panel { top: 8px; right: 8px; bottom: 8px; max-width: calc(100vw - 16px); } .lattice .conversation-heading { padding-block: 14px; } }
+@media (max-width: 640px) { .lattice .panel { top: 8px; right: 8px; bottom: 8px; max-width: calc(100% - 16px); } .lattice .conversation-heading { padding-block: 14px; } }
 @media (prefers-reduced-motion: no-preference) { .lattice button { transition: background-color 140ms, border-color 140ms, color 140ms; } }
 .lattice .conversation-tree, .lattice .conversation-tree ul { list-style: none; margin: 0; padding: 0; }
 .lattice .conversation-tree ul { margin-left: 10px; padding-left: 13px; }

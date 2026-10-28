@@ -154,7 +154,7 @@ export function FloatingConversationTree({ snapshot, tree, hidden }: { snapshot:
       const root = surface.current?.getRootNode() as ShadowRoot | undefined;
       const panel = root?.querySelector<HTMLElement>(".panel");
       const panelRect = panel?.getBoundingClientRect();
-      const right = innerWidth >= 1180 && panelRect && panelRect.width && getComputedStyle(panel!).display !== "none" ? panelRect.left - 12 : innerWidth;
+      const right = document.documentElement.dataset.latticeLayout === "docked" && panelRect && panelRect.width && getComputedStyle(panel!).display !== "none" ? panelRect.left - 12 : innerWidth;
       const anchor = reference && referenceRect(reference) || { left: innerWidth / 2, right: innerWidth / 2, top: 160, bottom: 180 };
       const next = positionTreeCard(anchor, { width: innerWidth, height: innerHeight, right }, surface.current?.getBoundingClientRect().height || undefined, expanded ? 900 : card?.id && tree.live[card.id]?.turns.some((turn) => turn.content?.some((part) => part.type === "native")) ? 680 : 420);
       if (expanded) { next.top = 12; next.maxHeight = innerHeight - 24; }
@@ -163,9 +163,13 @@ export function FloatingConversationTree({ snapshot, tree, hidden }: { snapshot:
     place();
     const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(place);
     if (surface.current) observer?.observe(surface.current);
+    const panel = (surface.current?.getRootNode() as ShadowRoot | undefined)?.querySelector(".panel");
+    if (panel) observer?.observe(panel);
+    const layoutObserver = new MutationObserver(place);
+    layoutObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-lattice-layout"] });
     document.addEventListener("scroll", place, true);
     window.addEventListener("resize", place);
-    return () => { observer?.disconnect(); document.removeEventListener("scroll", place, true); window.removeEventListener("resize", place); };
+    return () => { observer?.disconnect(); layoutObserver.disconnect(); document.removeEventListener("scroll", place, true); window.removeEventListener("resize", place); };
   }, [tree.focusTarget, cardId, rootId, sourceMessageId, snapshot.answers, hidden, expanded, card?.id, tree.live]);
   useLayoutEffect(() => { if (cardId && !hidden) surface.current?.focus({ preventScroll: true }); }, [tree.focusTarget, cardId, hidden]);
 

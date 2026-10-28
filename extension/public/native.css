@@ -16,11 +16,9 @@ html[data-lattice-cards="true"] [data-lattice-answer] {
   outline-offset: 5px;
   scroll-margin-block: 100px;
 }
-@media (min-width: 1180px) {
-  html[data-lattice-open="true"] main {
-    margin-inline-end: 364px;
-    min-width: 0;
-  }
+html[data-lattice-layout="docked"] main {
+  margin-inline-end: calc(var(--lattice-panel-width, 340px) + 24px);
+  min-width: 0;
 }
 @media (max-width: 640px) {
   html[data-lattice-cards="true"] [data-lattice-answer] {

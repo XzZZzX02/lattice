@@ -12,6 +12,7 @@ import { ConversationNavigator } from "./ConversationNavigator";
 import { useConversationTree } from "./useConversationTree";
 import { useTheme } from "./useTheme";
 import { ThemeMenu } from "./ThemeMenu";
+import { usePanelLayout } from "./usePanelLayout";
 import { platform, request } from "./platform";
 import { BRANCHES_KEY, emptyPresentation, mutatePresentation, presentationKey, readPresentation } from "./presentation";
 import type { BranchLink, Excerpt, NativeAnswer, PresentationMutation } from "./types";
@@ -26,9 +27,8 @@ export function LatticeApp({ getHref = liveHref }: { getHref?: () => string }) {
   const theme = useTheme();
   const [presentation, setPresentation] = useState(emptyPresentation);
   const [links, setLinks] = useState<BranchLink[]>([]);
-  const [open, setOpen] = useState(true);
-  const workspaceVisible = open && !snapshot.nativeOverlay;
-  const [wide, setWide] = useState(false);
+  const panel = usePanelLayout(!!snapshot.nativeOverlay);
+  const { open, setOpen, wide, setWide, visible: workspaceVisible } = panel;
   const [view, setView] = useState<View>("answers");
   const [query, setQuery] = useState("");
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -42,7 +42,18 @@ export function LatticeApp({ getHref = liveHref }: { getHref?: () => string }) {
   const currentRoute = useRef(snapshot.route);
   const followedAnchor = useRef("");
   const launcher = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
   const searchInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!workspaceVisible || !panel.compact) return;
+    const dismiss = (event: Event) => {
+      if (!event.composedPath().some((element) => element === panelRef.current || element === launcher.current)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", dismiss);
+    document.addEventListener("focusin", dismiss);
+    return () => { document.removeEventListener("pointerdown", dismiss); document.removeEventListener("focusin", dismiss); };
+  }, [workspaceVisible, panel.compact, setOpen]);
 
   useEffect(() => observeChat(setSnapshot, getHref), [getHref]);
   useEffect(() => { currentRoute.current = snapshot.route; }, [snapshot.route]);
@@ -65,10 +76,6 @@ export function LatticeApp({ getHref = liveHref }: { getHref?: () => string }) {
     if (!workspaceVisible) return;
     return linkExcerptHighlights(snapshot.answers, presentation.excerpts, (excerpt, anchor) => setLinkedExcerpt({ id: excerpt.id, anchor }));
   }, [snapshot.answers, presentation.excerpts, workspaceVisible]);
-  useEffect(() => {
-    document.documentElement.dataset.latticeOpen = String(workspaceVisible);
-    return () => { document.documentElement.removeAttribute("data-lattice-open"); };
-  }, [workspaceVisible]);
   useEffect(() => {
     if (!toast) return;
     const timer = setTimeout(() => setToast(""), 4200);
@@ -192,7 +199,8 @@ export function LatticeApp({ getHref = liveHref }: { getHref?: () => string }) {
   return <div className="lattice" data-theme={theme.mode === "lattice" ? "lattice" : "native"} data-theme-mode={theme.mode} data-native-scheme={theme.scheme}>
     <FloatingConversationTree snapshot={snapshot} tree={tree} hidden={!!snapshot.nativeOverlay} />
     {!snapshot.nativeOverlay && <button className={`launcher ${open ? "is-open" : ""}`} ref={launcher} onClick={() => { setOpen(!open); if (!open) setTimeout(() => searchInput.current?.focus(), 0); }} aria-label={open ? "收起 Lattice" : "打开 Lattice"} aria-expanded={open} type="button"><LatticeLogo /><span>Lattice</span><ChevronRight size={14} /></button>}
-    {open && <aside className={`panel ${wide ? "wide" : ""}`} style={{ display: workspaceVisible ? undefined : "none" }} aria-label="Lattice 对话工作区" onKeyDown={(event) => { if (event.key === "Escape") { setOpen(false); launcher.current?.focus(); } }}>
+    {open && <aside ref={panelRef} className={`panel ${panel.compact ? "compact" : ""} ${panel.resizing ? "is-resizing" : ""}`} style={{ width: panel.width, display: workspaceVisible ? undefined : "none" }} aria-label="Lattice 对话工作区" onKeyDown={(event) => { if (event.key === "Escape") { setOpen(false); launcher.current?.focus(); } }}>
+      <div className="panel-resize-handle" role="separator" tabIndex={0} aria-label="调整侧边栏宽度" aria-orientation="vertical" aria-valuemin={panel.minWidth} aria-valuemax={panel.maxWidth} aria-valuenow={panel.width} aria-valuetext={`${panel.width} 像素`} title="拖动调整宽度，双击恢复默认；也可使用左右方向键" {...panel.resizeProps} />
       <header className="panel-header">
         <div className="brand"><LatticeLogo /><strong>Lattice</strong><span>for ChatGPT</span></div>
         <div className="panel-header-actions"><ThemeMenu theme={theme} /><button className="icon-button" aria-label={wide ? "收窄工作区" : "展开工作区"} onClick={() => setWide(!wide)}>{wide ? <Minimize2 size={15} /> : <Maximize2 size={15} />}</button><button className="icon-button" onClick={() => { setOpen(false); launcher.current?.focus(); }} title="收起工作区" aria-label="收起工作区"><PanelRightClose size={17} /></button></div>

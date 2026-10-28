@@ -26,12 +26,13 @@ p { margin-block: 14px; }
 .native-actions button, .native-code-copy { border: 0; background: transparent; color: #777; padding: 4px 6px; cursor: pointer; }
 blockquote { border-left: 3px solid #ddd; margin-inline: 0; padding-left: 16px; color: #666; }
 pre { border-radius: 9px; padding: 20px; background: #f7f7f7; overflow-x: auto; font-size: 13px; }
-.native-composer { position: fixed; bottom: 15px; left: 235px; right: 390px; max-width: 720px; margin-inline: auto; padding: 14px 18px; border: 1px solid #ddd; border-radius: 23px; background: #fff; box-shadow: 0 5px 15px #0000000a; z-index: 2; }
+.native-composer { position: fixed; bottom: 15px; left: 235px; right: 30px; max-width: 720px; margin-inline: auto; padding: 14px 18px; border: 1px solid #ddd; border-radius: 23px; background: #fff; box-shadow: 0 5px 15px #0000000a; z-index: 2; }
+html[data-lattice-layout="docked"] .native-composer { right: calc(var(--lattice-panel-width, 340px) + 54px); }
 .native-composer textarea { width: 100%; height: 40px; border: 0; resize: none; outline: none; font: inherit; }
 .native-composer > div { display: flex; align-items: center; justify-content: space-between; }
 .native-composer button { width: 30px; height: 30px; background: #222; border: 0; border-radius: 50%; color: white; font-size: 20px; }
 .native-composer small { color: #999; font-size: 10px; }
 [role="menu"] { position: fixed; top: 40%; left: 45%; border: 1px solid #ddd; border-radius: 10px; background: white; padding: 8px; box-shadow: 0 10px 40px #0002; z-index: 100; }
 [role="menuitem"] { display: block; padding: 10px 14px; background: transparent; border: 0; font: inherit; cursor: pointer; }
-@media(max-width: 1180px) { .native-sidebar { display: none; } main { margin-left: 0; padding-inline: 20px 380px; } .native-composer { left: 20px; right: 380px; } }
+@media(max-width: 1180px) { .native-sidebar { display: none; } main { margin-left: 0; padding-inline: 20px; } .native-composer { left: 20px; right: 20px; } }
 @media(max-width: 640px) { main { padding-inline: 15px; } .native-composer { left: 15px; right: 15px; } }
